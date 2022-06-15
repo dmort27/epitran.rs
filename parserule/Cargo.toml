@@ -2,7 +2,15 @@
 name = "parserule"
 version = "0.1.0"
 edition = "2021"
+authors = ["David R. Mortensen <dmortens@cs.cmu.edu>"]
+description = "Parser for string rewrite rules using PCRE-like regular expression notations"
+keywords = ["linguistics", "phonology", "re-write", "g2p", "parse"]
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+nom = "7.1.1"
