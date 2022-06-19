@@ -1,10 +1,10 @@
 use nom::IResult;
 use nom::{
-    character::complete::{char as nom_char, none_of},
-    combinator::{success},
-    multi::{many1, separated_list1},
-    sequence::{preceded, delimited, terminated},
     branch::alt,
+    character::complete::{char as nom_char, none_of},
+    combinator::success,
+    multi::{many1, separated_list1},
+    sequence::{delimited, preceded, terminated},
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -44,30 +44,49 @@ fn class(input: &str) -> IResult<&str, RegexAST> {
 
 #[allow(dead_code)]
 fn complement_class(input: &str) -> IResult<&str, RegexAST> {
-    let (input, s) = delimited(nom_char('['), preceded(nom_char('^'), many1(none_of(" ()[]-|*+#"))), nom_char(']'))(input)?;
+    let (input, s) = delimited(
+        nom_char('['),
+        preceded(nom_char('^'), many1(none_of(" ()[]-|*+#"))),
+        nom_char(']'),
+    )(input)?;
     Ok((input, RegexAST::ClassComplement(s)))
 }
 
 #[allow(dead_code)]
-fn epsilon(input: &str) -> IResult<&str, RegexAST> {
-    success(RegexAST::Epsilon)(input)
-}
-
-#[allow(dead_code)]
 fn sequence(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = many1(alt((character, class, complement_class, boundary, group)))(input)?;
+    let (input, g) = many1(alt((
+        star,
+        plus,
+        option,
+        disjunction,
+        class,
+        complement_class,
+        group,
+        boundary,
+        character,
+    )))(input)?;
     Ok((input, RegexAST::Group(g)))
 }
 
 #[allow(dead_code)]
 fn group(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = alt((delimited(nom_char('('), sequence, nom_char(')')), epsilon))(input)?;
+    let (input, g) = (delimited(nom_char('('), sequence, nom_char(')')))(input)?;
+    Ok((input, g))
+}
+
+#[allow(dead_code)]
+fn regex(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = alt((sequence, success(RegexAST::Epsilon)))(input)?;
     Ok((input, g))
 }
 
 #[allow(dead_code)]
 fn disjunction(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = separated_list1(nom_char('|'), sequence)(input)?;
+    let (input, g) = delimited(
+        nom_char('('),
+        separated_list1(nom_char('|'), sequence),
+        nom_char(')'),
+    )(input)?;
     Ok((input, RegexAST::Disjunction(g)))
 }
 
@@ -98,45 +117,106 @@ fn boundary(input: &str) -> IResult<&str, RegexAST> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_character() {
         assert_eq!(character("abc"), Ok(("bc", RegexAST::Char('a'))));
     }
 
     #[test]
-    fn test_epsilon() {
-        assert_eq!(epsilon("abc"), Ok(("abc", RegexAST::Epsilon)));
-    }
-
-    #[test]
     fn test_class() {
-        assert_eq!(class("[abc]"), Ok(("", RegexAST::Class(vec!['a', 'b', 'c']))));
+        assert_eq!(
+            class("[abc]"),
+            Ok(("", RegexAST::Class(vec!['a', 'b', 'c'])))
+        );
     }
 
     #[test]
     fn test_complement_class() {
-        assert_eq!(complement_class("[^abc]"), Ok(("", RegexAST::ClassComplement(vec!['a', 'b', 'c']))));
+        assert_eq!(
+            complement_class("[^abc]"),
+            Ok(("", RegexAST::ClassComplement(vec!['a', 'b', 'c'])))
+        );
     }
 
     #[test]
     fn test_sequence3() {
-        debug_assert_eq!(sequence("a[123]#"), Ok(("", RegexAST::Group(vec![RegexAST::Char('a'), RegexAST::Class(vec!['1', '2', '3']), RegexAST::Boundary]))));
+        debug_assert_eq!(
+            sequence("a[123]#"),
+            Ok((
+                "",
+                RegexAST::Group(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Class(vec!['1', '2', '3']),
+                    RegexAST::Boundary
+                ])
+            ))
+        );
     }
 
     #[test]
-    fn test_group1() {
-        debug_assert_eq!(group(""), Ok(("", RegexAST::Epsilon)));
+    fn test_sequence4() {
+        debug_assert_eq!(
+            sequence("a"),
+            Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+        );
     }
 
     #[test]
     fn test_group3() {
-        debug_assert_eq!(group("(a)"), Ok(("", RegexAST::Group(vec![RegexAST::Char('a')]))));
+        debug_assert_eq!(
+            group("(a)"),
+            Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+        );
     }
 
     #[test]
     fn test_group2() {
-        debug_assert_eq!(group("(a[def])"), Ok(("", RegexAST::Group(vec![RegexAST::Char('a'), RegexAST::Class(vec!['d', 'e', 'f'])]))));
+        debug_assert_eq!(
+            group("(a[def])"),
+            Ok((
+                "",
+                RegexAST::Group(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Class(vec!['d', 'e', 'f'])
+                ])
+            ))
+        );
+    }
+
+    #[test]
+    fn test_regex1() {
+        debug_assert_eq!(
+            regex("a"),
+            Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+        );
+    }
+
+    #[test]
+    fn test_regex2() {
+        debug_assert_eq!(regex(""), Ok(("", RegexAST::Epsilon)));
+    }
+
+    #[test]
+    fn test_plus() {
+        debug_assert_eq!(
+            plus("a+"),
+            Ok(("", RegexAST::Plus(Box::new(RegexAST::Char('a')))))
+        )
+    }
+
+    #[test]
+    fn test_regex_with_plus1() {
+        debug_assert_eq!(
+            regex("a+b"),
+            Ok((
+                "",
+                RegexAST::Group(vec![
+                    RegexAST::Plus(Box::new(RegexAST::Char('a'))),
+                    RegexAST::Char('b'),
+                ])
+            ))
+        );
     }
 
     // #[test]
