@@ -2,7 +2,7 @@ use nom::IResult;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char as nom_char, none_of, space0, space1},
+    character::complete::{alpha1, char as nom_char, line_ending, none_of, space0, space1},
     combinator::{success, value},
     multi::{many0, many1, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -10,7 +10,7 @@ use nom::{
 
 #[derive(Debug, PartialEq, Clone)]
 #[allow(dead_code)]
-enum RegexAST {
+pub enum RegexAST {
     Char(char),
     Group(Vec<RegexAST>),
     Option(Box<RegexAST>),
@@ -19,22 +19,22 @@ enum RegexAST {
     Disjunction(Vec<RegexAST>),
     Class(Vec<char>),
     ClassComplement(Vec<char>),
-    Macro((String, Box<RegexAST>)),
+    Macro(String),
+    MacroDef((String, Box<RegexAST>)),
     Epsilon,
     Boundary,
     Comment,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-#[allow(dead_code)]
-enum Statement {
+pub enum Statement {
     Comment,
-    Macro(RegexAST),
+    MacroDef((String, RegexAST)),
     Rule(RewriteRule),
 }
 
-#[derive(Debug, PartialEq)]
-struct RewriteRule {
+#[derive(Debug, PartialEq, Clone)]
+pub struct RewriteRule {
     left: RegexAST,
     right: RegexAST,
     source: RegexAST,
@@ -49,7 +49,8 @@ fn character(input: &str) -> IResult<&str, RegexAST> {
 
 #[allow(dead_code)]
 fn class(input: &str) -> IResult<&str, RegexAST> {
-    let (input, s) = delimited(nom_char('['), many1(none_of(" ()[]-|*+^#%")), nom_char(']'))(input)?;
+    let (input, s) =
+        delimited(nom_char('['), many1(none_of(" ()[]-|*+^#%")), nom_char(']'))(input)?;
     Ok((input, RegexAST::Class(s)))
 }
 
@@ -73,6 +74,7 @@ fn sequence(input: &str) -> IResult<&str, RegexAST> {
         class,
         complement_class,
         group,
+        mac,
         boundary,
         character,
     )))(input)?;
@@ -120,6 +122,12 @@ fn option(input: &str) -> IResult<&str, RegexAST> {
 }
 
 #[allow(dead_code)]
+fn mac(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = delimited(tag("::"), alpha1, tag("::"))(input)?;
+    Ok((input, RegexAST::Macro(m.to_string())))
+}
+
+#[allow(dead_code)]
 fn boundary(input: &str) -> IResult<&str, RegexAST> {
     let (input, _) = nom_char('#')(input)?;
     Ok((input, RegexAST::Boundary))
@@ -134,7 +142,7 @@ fn comment(input: &str) -> IResult<&str, RegexAST> {
 }
 
 #[allow(dead_code)]
-fn re_mac(input: &str) -> IResult<&str, (String, RegexAST)> {
+fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST)> {
     let (input, (_, name, _, _, _, re_group)) = tuple((
         space0,
         delimited(tag("::"), alpha1, tag("::")),
@@ -158,13 +166,13 @@ fn rule(input: &str) -> IResult<&str, RewriteRule> {
         regex,
     ))(input)?;
     Ok((
-        input, 
+        input,
         RewriteRule {
             source,
             target,
             left,
             right,
-        }
+        },
     ))
 }
 
@@ -194,18 +202,31 @@ fn rule_with_comment(input: &str) -> IResult<&str, RewriteRule> {
 
 #[allow(dead_code)]
 fn comment_statment(input: &str) -> IResult<&str, Statement> {
-    value(
-        Statement::Comment,
-        comment,
-    )(input)
+    value(Statement::Comment, comment)(input)
 }
 
+#[allow(dead_code)]
 fn rule_statement(input: &str) -> IResult<&str, Statement> {
-    let (input, r) = alt((
-        rule,
-        rule_with_comment
-    ))(input)?;
+    let (input, r) = alt((rule, rule_with_comment))(input)?;
     Ok((input, Statement::Rule(r)))
+}
+
+#[allow(dead_code)]
+fn macro_statement(input: &str) -> IResult<&str, Statement> {
+    let (input, m) = re_mac_def(input)?;
+    Ok((input, Statement::MacroDef(m)))
+}
+
+#[allow(dead_code)]
+pub fn parse_rule_file(input: &str) -> IResult<&str, Vec<Statement>> {
+    let (input, (statements, _)) = pair(
+        separated_list1(
+            line_ending,
+            alt((macro_statement, rule_statement, comment_statment)),
+        ),
+        many0(line_ending),
+    )(input)?;
+    Ok((input, statements))
 }
 
 #[cfg(test)]
@@ -314,9 +335,20 @@ mod tests {
     }
 
     #[test]
-    fn test_re_mac() {
+    fn test_mac() {
         debug_assert_eq!(
-            re_mac("::abc:: = (d|e)"),
+            regex("::macro::"),
+            Ok((
+                "",
+                RegexAST::Group(vec![RegexAST::Macro("macro".to_string())])
+            ))
+        );
+    }
+
+    #[test]
+    fn test_re_mac_def() {
+        debug_assert_eq!(
+            re_mac_def("::abc:: = (d|e)"),
             Ok((
                 "",
                 (
@@ -332,13 +364,7 @@ mod tests {
 
     #[test]
     fn test_comment() {
-        debug_assert_eq!(
-            comment("% Comment"),
-            Ok((
-                "",
-                RegexAST::Comment,
-            ))
-        )
+        debug_assert_eq!(comment("% Comment"), Ok(("", RegexAST::Comment,)))
     }
 
     #[test]
@@ -367,19 +393,17 @@ mod tests {
                     left: RegexAST::Group(vec![RegexAST::Char('c')]),
                     right: RegexAST::Group(vec![RegexAST::Char('d')]),
                     source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                    target: RegexAST::Group(vec![RegexAST:: Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
                 }
             ))
         );
     }
 
-    // #[test]
-    // fn test_group() {
-    //     debug_assert_eq!(sequence("abc[def]"), Ok(("", RegexAST::Group(vec![RegexAST::String("abc".to_string()), RegexAST::Class(vec!['d', 'e', 'f'])]))));
-    // }
-
-    // #[test]
-    // fn test_sequence_2() {
-    //     debug_assert_eq!(sequence("abc"), Ok(("", RegexAST::Group(vec![RegexAST::String("abc".to_string())]))));
-    // }
+    #[test]
+    fn test_sep_list() {
+        fn sep(input: &str) -> IResult<&str, Vec<&str>> {
+            separated_list1(nom_char('\n'), alpha1)(input)
+        }
+        debug_assert_eq!(sep("abc\ndef\n"), Ok(("", vec!["abc", "def"])))
+    }
 }
