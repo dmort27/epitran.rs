@@ -48,11 +48,11 @@ fn character(input: &str) -> IResult<&str, RegexAST> {
 
 fn uni_esc(input: &str) -> IResult<&str, RegexAST> {
     let (input, num) = map_res(
-    preceded(
-        tag("\\u"),
-        recognize(many1(one_of("0123456789abcdefABCDEF"))),
-    ),
-    |out: &str| u32::from_str_radix(out, 16)
+        preceded(
+            tag("\\u"),
+            recognize(many1(one_of("0123456789abcdefABCDEF"))),
+        ),
+        |out: &str| u32::from_str_radix(out, 16),
     )(input)?;
     Ok((input, RegexAST::Char(std::char::from_u32(num).unwrap())))
 }
