@@ -225,7 +225,7 @@ fn comment_statment(input: &str) -> IResult<&str, Statement> {
 }
 
 fn rule_statement(input: &str) -> IResult<&str, Statement> {
-    let (input, r) = alt((rule, rule_with_comment))(input)?;
+    let (input, r) = alt((rule, rule_no_env, rule_with_comment))(input)?;
     Ok((input, Statement::Rule(r)))
 }
 
