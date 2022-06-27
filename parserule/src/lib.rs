@@ -2,11 +2,12 @@ use nom::IResult;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char as nom_char, line_ending, none_of, space0, space1},
-    combinator::{success, value},
+    character::complete::{alpha1, char as nom_char, line_ending, none_of, one_of, space0},
+    combinator::{map_res, recognize, success, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
 };
+use std::char;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RegexAST {
@@ -16,8 +17,8 @@ pub enum RegexAST {
     Star(Box<RegexAST>),
     Plus(Box<RegexAST>),
     Disjunction(Vec<RegexAST>),
-    Class(Vec<char>),
-    ClassComplement(Vec<char>),
+    Class(Vec<RegexAST>),
+    ClassComplement(Vec<RegexAST>),
     Macro(String),
     MacroDef((String, Box<RegexAST>)),
     Epsilon,
@@ -45,16 +46,35 @@ fn character(input: &str) -> IResult<&str, RegexAST> {
     Ok((input, RegexAST::Char(c)))
 }
 
+fn uni_esc(input: &str) -> IResult<&str, RegexAST> {
+    let (input, num) = map_res(
+    preceded(
+        tag("\\u"),
+        recognize(many1(one_of("0123456789abcdefABCDEF"))),
+    ),
+    |out: &str| u32::from_str_radix(out, 16)
+    )(input)?;
+    Ok((input, RegexAST::Char(std::char::from_u32(num).unwrap())))
+}
+
+fn escape(input: &str) -> IResult<&str, RegexAST> {
+    let (input, c) = preceded(tag("\\"), one_of("\\ /<>_()[]-|*+^#%"))(input)?;
+    Ok((input, RegexAST::Char(c)))
+}
+
 fn class(input: &str) -> IResult<&str, RegexAST> {
-    let (input, s) =
-        delimited(nom_char('['), many1(none_of(" />_()[]-|*+^#%")), nom_char(']'))(input)?;
+    let (input, s) = delimited(
+        nom_char('['),
+        many1(alt((escape, uni_esc, character))),
+        nom_char(']'),
+    )(input)?;
     Ok((input, RegexAST::Class(s)))
 }
 
 fn complement_class(input: &str) -> IResult<&str, RegexAST> {
     let (input, s) = delimited(
         nom_char('['),
-        preceded(nom_char('^'), many1(none_of(" />_-()[]-|*+#%"))),
+        preceded(nom_char('^'), many1(alt((escape, uni_esc, character)))),
         nom_char(']'),
     )(input)?;
     Ok((input, RegexAST::ClassComplement(s)))
@@ -71,6 +91,8 @@ fn sequence(input: &str) -> IResult<&str, RegexAST> {
         group,
         mac,
         boundary,
+        uni_esc,
+        escape,
         character,
     )))(input)?;
     Ok((input, RegexAST::Group(g)))
@@ -162,11 +184,8 @@ fn rule(input: &str) -> IResult<&str, RewriteRule> {
 }
 
 fn rule_no_env(input: &str) -> IResult<&str, RewriteRule> {
-    let (input, (source, _, target)) = tuple((
-        regex,
-        delimited(space0, tag("->"), space0),
-        regex
-    ))(input)?;
+    let (input, (source, _, target)) =
+        tuple((regex, delimited(space0, tag("->"), space0), regex))(input)?;
     Ok((
         input,
         RewriteRule {
@@ -174,7 +193,7 @@ fn rule_no_env(input: &str) -> IResult<&str, RewriteRule> {
             target,
             left: RegexAST::Epsilon,
             right: RegexAST::Epsilon,
-        }
+        },
     ))
 }
 
@@ -217,10 +236,10 @@ fn macro_statement(input: &str) -> IResult<&str, Statement> {
 /// Given an a pre-processing or post-processing script, return a vector of
 /// parsed statements that can be converted to a weighted finite state
 /// transducer.
-/// 
+///
 /// ```rust
 /// use parserule::*;
-/// 
+///
 /// let script = "b -> p / _ #\n";
 /// let parsed = parse_script(script);
 /// assert_eq!(
@@ -243,13 +262,13 @@ pub fn parse_script(input: &str) -> Vec<Statement> {
             alt((macro_statement, rule_statement, comment_statment)),
         ),
         many0(line_ending),
-    )(input).unwrap();
+    )(input)
+    .unwrap();
     statements
 }
 
 #[cfg(test)]
 mod tests {
-    use nom::error::dbg_dmp;
 
     use super::*;
 
@@ -259,10 +278,22 @@ mod tests {
     }
 
     #[test]
+    fn test_uni_esc() {
+        assert_eq!(uni_esc(r#"\u014B"#), Ok(("", RegexAST::Char('ŋ'))));
+    }
+
+    #[test]
     fn test_class() {
         assert_eq!(
             class("[abc]"),
-            Ok(("", RegexAST::Class(vec!['a', 'b', 'c'])))
+            Ok((
+                "",
+                RegexAST::Class(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Char('b'),
+                    RegexAST::Char('c')
+                ])
+            ))
         );
     }
 
@@ -270,7 +301,14 @@ mod tests {
     fn test_complement_class() {
         assert_eq!(
             complement_class("[^abc]"),
-            Ok(("", RegexAST::ClassComplement(vec!['a', 'b', 'c'])))
+            Ok((
+                "",
+                RegexAST::ClassComplement(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Char('b'),
+                    RegexAST::Char('c')
+                ])
+            ))
         );
     }
 
@@ -282,7 +320,11 @@ mod tests {
                 "",
                 RegexAST::Group(vec![
                     RegexAST::Char('a'),
-                    RegexAST::Class(vec!['1', '2', '3']),
+                    RegexAST::Class(vec![
+                        RegexAST::Char('1'),
+                        RegexAST::Char('2'),
+                        RegexAST::Char('3')
+                    ]),
                     RegexAST::Boundary
                 ])
             ))
@@ -313,7 +355,11 @@ mod tests {
                 "",
                 RegexAST::Group(vec![
                     RegexAST::Char('a'),
-                    RegexAST::Class(vec!['d', 'e', 'f'])
+                    RegexAST::Class(vec![
+                        RegexAST::Char('d'),
+                        RegexAST::Char('e'),
+                        RegexAST::Char('f')
+                    ])
                 ])
             ))
         );
@@ -402,7 +448,6 @@ mod tests {
             ))
         );
     }
-
 
     #[test]
     fn test_rule() {
