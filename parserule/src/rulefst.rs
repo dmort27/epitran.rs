@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::ruleparse::RegexAST;
+use crate::ruleparse::{RegexAST, Statement};
 
 fn unicode_symbol_table() -> Arc<SymbolTable> {
     let mut symt = SymbolTable::new();
@@ -17,16 +17,42 @@ fn unicode_symbol_table() -> Arc<SymbolTable> {
         .map(|i| char::from_u32(i))
         .filter_map(|i| i)
         .for_each(|i| {
-            let _ = symt.add_symbol((i));
+            let _ = symt.add_symbol(i);
         });
     Arc::new(symt)
+}
+
+fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = VectorFst::<TropicalWeight>::new();
+    fst.set_input_symbols(symt.clone());
+    fst.set_output_symbols(symt.clone());
+    let q0 = fst.add_state();
+    fst.set_start(q0)?;
+    fst.set_final(q0, 0.0)?;
+    for (label, _) in symt.iter() {
+        fst.add_tr(q0, Tr::new(label, label, 0.0, q0));
+    }
+    Ok(fst)
+}
+
+fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWeight>> {
+    let symt = unicode_symbol_table();
+    let fst = universal_acceptor(symt)?;
+    for statement in statements {
+        match statement {
+            Statement::Comment => (),
+            Statement::MacroDef((mac, def)) => (),
+            Statement::Rule(rule) => (),
+        }
+    }
+    Ok(fst)
 }
 
 fn context_node_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     node: RegexAST,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     match node {
         RegexAST::Char(c) => char_fst(symt, macros, c),
         RegexAST::Group(v) => group_fst(symt, macros, v),
@@ -37,7 +63,7 @@ fn context_node_fst(
         RegexAST::Class(v) => class_fst(symt, macros, v),
         RegexAST::ClassComplement(v) => class_complement_fst(symt, macros, v),
         RegexAST::Macro(m) => macro_fst(symt, macros, m),
-        RegexAST::MacroDef(mdef) => macro_def_fst(symt, macros, mdef),
+        // RegexAST::MacroDef(mdef) => macro_def_fst(symt, macros, mdef),
         RegexAST::Epsilon => epsilon_fst(symt, macros),
         _ => epsilon_fst(symt, macros),
     }
@@ -47,7 +73,7 @@ fn char_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     c: char,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -57,13 +83,13 @@ fn char_fst(
     fst.set_final(q1, 0.0)?;
     let label = symt.get_label(c.to_string()).unwrap();
     fst.add_tr(q0, Tr::new(label, label, 0.0, q1))?;
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 fn epsilon_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -73,14 +99,14 @@ fn epsilon_fst(
     fst.set_final(q1, 0.0)?;
     // The label 0 indicates epsilon
     fst.add_tr(q0, Tr::new(0, 0, 0.0, q1))?;
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 fn class_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     v: Vec<RegexAST>,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -97,14 +123,14 @@ fn class_fst(
             _ => (),
         }
     }
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 fn class_complement_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     v: Vec<RegexAST>,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -127,14 +153,14 @@ fn class_complement_fst(
             fst.add_tr(q0, Tr::new(label, label, 0.0, q1))?;
         }
     }
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 fn group_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     v: Vec<RegexAST>,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -147,7 +173,7 @@ fn group_fst(
                 fst.set_final(last_final_state, -1.0)?;
             }
             _ => {
-                let (inner_fst, _) = context_node_fst(symt.clone(), macros, n).unwrap();
+                let inner_fst = context_node_fst(symt.clone(), macros, n).unwrap();
                 fst = compose(fst, inner_fst).unwrap();
                 for s in fst.states_iter() {
                     if fst.is_final(s).unwrap() {
@@ -157,26 +183,26 @@ fn group_fst(
             }
         }
     }
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 fn option_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     n: RegexAST,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
-    let (mut fst, macros) = context_node_fst(symt, macros, n).unwrap();
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = context_node_fst(symt, macros, n).unwrap();
     let q0 = fst.start().unwrap();
     fst.set_final(q0, 0.0)?;
-    Ok((fst, macros))
+    Ok(fst)
 }
 
 fn star_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     n: RegexAST,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
-    let (mut fst, macros) = context_node_fst(symt, macros, n).unwrap();
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = context_node_fst(symt, macros, n).unwrap();
     let q0 = fst.start().unwrap();
     fst.set_final(q0, 0.0)?;
     let fst2 = fst.clone();
@@ -186,15 +212,15 @@ fn star_fst(
     for s in final_states {
         fst.add_tr(s, Tr::new(0, 0, 0.0, q0))?;
     }
-    Ok((fst, macros))
+    Ok(fst)
 }
 
 fn plus_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     n: RegexAST,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
-    let (mut fst, macros) = context_node_fst(symt, macros, n).unwrap();
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = context_node_fst(symt, macros, n).unwrap();
     let q0 = fst.start().unwrap();
     let fst2 = fst.clone();
     let final_states = fst2
@@ -203,36 +229,36 @@ fn plus_fst(
     for s in final_states {
         fst.add_tr(s, Tr::new(0, 0, 0.0, q0))?;
     }
-    Ok((fst, macros))
+    Ok(fst)
 }
 
 fn macro_def_fst(
     _symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     mdef: (String, Box<RegexAST>),
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let (mac, def) = mdef;
     let mut macros2 = macros.clone();
     macros2.insert(mac, *def);
     let fst = VectorFst::<TropicalWeight>::new();
-    Ok((fst, macros2))
+    Ok(fst)
 }
 
 fn macro_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     mac: String,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let node = macros.get(&mac).unwrap();
-    let (fst, new_macros) = context_node_fst(symt, macros, node.clone())?;
-    Ok((fst, new_macros))
+    let fst = context_node_fst(symt, macros, node.clone())?;
+    Ok(fst)
 }
 
 fn disjunction_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     alternates: Vec<RegexAST>,
-) -> Result<(VectorFst<TropicalWeight>, HashMap<String, RegexAST>)> {
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -241,10 +267,10 @@ fn disjunction_fst(
     fst.set_start(q0)?;
     fst.set_final(q1, 0.0)?;
     for alternate in alternates {
-        let (alt_fst, _) = context_node_fst(symt.clone(), macros, alternate)?;
+        let alt_fst = context_node_fst(symt.clone(), macros, alternate)?;
         union(&mut fst, &alt_fst)?;
     }
-    Ok((fst, macros.clone()))
+    Ok(fst)
 }
 
 #[cfg(test)]
@@ -261,7 +287,7 @@ mod tests {
     fn test_char1() {
         let symt = unicode_symbol_table();
         let macros = HashMap::new();
-        let (fst, macros) = char_fst(symt, &macros, 'a').unwrap();
+        let fst = char_fst(symt, &macros, 'a').unwrap();
         let paths: Vec<_> = fst.paths_iter().collect();
         assert_eq!(paths.len(), 1);
     }

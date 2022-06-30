@@ -20,7 +20,7 @@ pub enum RegexAST {
     Class(Vec<RegexAST>),
     ClassComplement(Vec<RegexAST>),
     Macro(String),
-    MacroDef((String, Box<RegexAST>)),
+    // MacroDef((String, Box<RegexAST>)),
     Epsilon,
     Boundary,
     Comment,
@@ -258,7 +258,7 @@ fn macro_statement(input: &str) -> IResult<&str, Statement> {
 pub fn parse_script(input: &str) -> Vec<Statement> {
     let (_, (statements, _)) = pair(
         separated_list0(
-            line_ending,
+            many0(line_ending),
             alt((macro_statement, rule_statement, comment_statment)),
         ),
         many0(line_ending),
