@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::ruleparse::{RegexAST, Statement};
+use crate::ruleparse::{RegexAST, Statement, RewriteRule};
 
 fn unicode_symbol_table() -> Arc<SymbolTable> {
     let mut symt = SymbolTable::new();
@@ -37,15 +37,30 @@ fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight
 
 fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWeight>> {
     let symt = unicode_symbol_table();
-    let fst = universal_acceptor(symt)?;
+    let mut fst = universal_acceptor(symt.clone())?;
+    let mut macros: HashMap<String, RegexAST> = HashMap::new();
     for statement in statements {
         match statement {
             Statement::Comment => (),
-            Statement::MacroDef((mac, def)) => (),
-            Statement::Rule(rule) => (),
+            Statement::MacroDef((mac, def)) => {
+                macros.insert(mac, def).unwrap();    
+                ()
+            },
+            Statement::Rule(rule) => {
+                let fst2 = rule_fst(symt.clone(), &macros, rule)?;
+                fst = compose(fst.clone(), fst2)?;
+                ()
+            },
         }
     }
     Ok(fst)
+}
+
+fn rule_fst(symt: Arc<SymbolTable>, macros: &HashMap<String, RegexAST>, rule: RewriteRule) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = VectorFst::<TropicalWeight>::new();
+    fst.set_input_symbols(symt.clone());
+    fst.set_output_symbols(symt.clone());
+    Ok(fst)    
 }
 
 fn context_node_fst(
