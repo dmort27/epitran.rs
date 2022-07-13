@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rustfst::algorithms::compose::compose;
-use rustfst::algorithms::union::union;
+use rustfst::algorithms::{union::union, concat::concat};
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, MutableFst};
 use rustfst::prelude::*;
@@ -10,6 +10,19 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, Statement, RewriteRule};
+
+#[derive(Debug, Clone, Copy)]
+enum LabelColor {
+    White,
+    Gray,
+    Black,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Action {
+    Enter,
+    Exit,
+}
 
 fn unicode_symbol_table() -> Arc<SymbolTable> {
     let mut symt = SymbolTable::new();
@@ -60,7 +73,58 @@ fn rule_fst(symt: Arc<SymbolTable>, macros: &HashMap<String, RegexAST>, rule: Re
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    Ok(fst)    
+    fst.add_state();
+    fst.set_start(0)?;
+    fst.set_final(0, 0.0)?;
+    let left_fst = context_node_fst(symt.clone(), macros, rule.left).unwrap();
+    let right_fst = context_node_fst(symt.clone(), macros, rule.right).unwrap();
+    let source_fst = output_to_epsilons(context_node_fst(symt.clone(), macros, rule.source).unwrap());
+    let target_fst = output_to_epsilons(context_node_fst(symt.clone(), macros, rule.target).unwrap());
+    if is_cyclic(target_fst.clone()) {
+        panic!("Cyclic target FST");
+    }
+    let paths: Vec<_> = target_fst.clone().paths_iter().collect();
+    if paths.len() > 1 {
+        panic!("Non-deterministic target FST");
+    }
+    concat(&mut fst, &left_fst)?;
+    concat(&mut fst, &target_fst)?;
+    concat(&mut fst, &source_fst)?;
+    concat(&mut fst, &right_fst)?;
+
+    let start_state = get_start(fst.clone())?;
+    for q in fst.states_iter() {
+        if fst.is_final(q)? {
+            if fst.final_weight(q).unwrap().unwrap() != TropicalWeight::from(-1.0) {
+                fst.emplace_tr(q, 0, 0, 0.0, start_state);
+            } else {
+                fst.set_final(q, 0.0);
+            }
+        }
+    }
+    Ok(fst) 
+}
+
+fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight> {
+    let mut fst2 = fst.clone();
+    for state in fst2.states_iter() {
+        let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
+        for tr in trs.iter() {
+            fst2.emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate).unwrap();
+        }
+    }
+    fst2
+}
+
+fn input_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight> {
+    let mut fst2 = fst.clone();
+    for state in fst2.states_iter() {
+        let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
+        for tr in trs.iter() {
+            fst2.emplace_tr(state, 0, tr.olabel, tr.weight, tr.nextstate).unwrap();
+        }
+    }
+    fst2
 }
 
 fn context_node_fst(
@@ -286,6 +350,49 @@ fn disjunction_fst(
         union(&mut fst, &alt_fst)?;
     }
     Ok(fst)
+}
+
+ /// Returns true if the wFST has a cycle. Otherwise, it returns false.
+ pub fn is_cyclic(fst: VectorFst<TropicalWeight>) -> bool {
+    let fst = fst.clone();
+    let mut stack: Vec<(Action, StateId)> = Vec::new();
+    match fst.start() {
+        Some(s) => stack.push((Action::Enter, s)),
+        _ => panic!("wFST lacks a start state. Aborting."),
+    }
+    let mut state = vec![LabelColor::White; fst.num_states()];
+    while !stack.is_empty() {
+        match stack.pop() {
+            Some((Action::Exit, v)) => state[v as usize] = LabelColor::Black,
+            Some((Action::Enter, v)) => {
+                state[v as usize] = LabelColor::Gray;
+                stack.push((Action::Exit, v));
+                for tr in fst
+                    .get_trs(v)
+                    .unwrap_or_else(|e| panic!("State {} not present in wFST: {}", v, e))
+                    .iter()
+                {
+                    let n = tr.nextstate;
+                    match state[n as usize] {
+                        LabelColor::Gray => return true,
+                        LabelColor::White => stack.push((Action::Enter, n)),
+                        _ => (),
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+    false
+}
+
+fn get_start(fst: VectorFst<TropicalWeight>) -> Result<StateId> {
+    for q in fst.states_iter() {
+        if fst.is_start(q) {
+            return Ok(q)
+        }
+    }
+    panic!("FST has not start state!")
 }
 
 #[cfg(test)]
