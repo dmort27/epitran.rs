@@ -1,0 +1,8 @@
+[package]
+name = "m2mfstaligner"
+version = "0.1.0"
+edition = "2023"
+
+[dependencies]
+anyhow = "1.0.68"
+rustfst = "0.11.6"
