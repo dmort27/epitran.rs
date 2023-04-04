@@ -1,20 +1,31 @@
 use anyhow::Result;
 use rustfst::prelude::*;
 use std::collections::HashMap;
+use string_join::Join;
 
 
 struct M2MFstAligner {
    // TODO: Fill in
    // ----- Training dataset metadata
    // 1. vector of alignments WFSTs, one for each training example
+   lattices: Vec<LogWeight>,
    // 2. total of type float, running sum for EM, is not reset
+   total: LogWeight,
    // 3. partial counts of all unique inputs/outputs, running sum for EM, not reset
+   partial_counts: HashMap<GPAlign, LogWeight>,
    //    - could be a hashtable of GraphemePhonemeAlignment structs
    // 4. unique egdes of type int, number of unique edges in 1.
+   // num_unique: u32,
    // 9. symbol table, maps Strings (symbols) to ints (labels), usually input/output as 2 symbols instead of 1
+   symbtbl: SymbolTable,
+   grphm_eps: bool,
+   phnm_eps: bool,
+   restrict: bool,
    // ----- Training metadata
-   // 6. max phoneme subsequence
-   // 7. max grapheme subsequence
+   // 6. max grapheme subsequence
+   max_grphm_len: usize,
+   // 7. max phoneme subsequence
+   max_phnm_len: usize,
    // ----- Maybe?
    // 5. training threshold
    // 8. max iterations of training
@@ -26,20 +37,147 @@ struct M2MFstAligner {
 struct GPAlign(u32,u32);
 
 impl M2MFstAligner {
-   fn new() -> Self {
+   fn new(max_grphm_len: usize, max_phnm_len: usize) -> Self {
       // TODO: constructor for M2MFstAligner
 
       Self {
          // TODO: fill in with user parameters
+         lattices: Vec::new(),
+         total: LogWeight::zero(),
+         partial_counts: HashMap::new(),
+         symbtbl: SymbolTable::new(),
+         max_grphm_len,
+         max_phnm_len,
       }
    }
 
-   fn seq2fst(&mut self) {
-      // TODO: converts grapheme-phoneme pair to FST
+   fn seqs2fsts(&mut self, data: &Vec<(Vec<String>, Vec<String>)>) {
+      // TODO: given a list of grapheme-phoneme pairs, convert each one into a FST
+      for pair in data {
+         let (grapheme_seq, phoneme_seq) = &pair;
+         let mut fst = VectorFst<LogWeight>::new();
+         self.seq2fst(&mut fst, &grapheme_seq, &phoneme_seq);
+         self.lattices.push(fst);
+      }
+
+      self.initialize(self.partial_counts.len() as f32);
    }
 
-   fn seqs2fsts(&mut self) {
-      // TODO: given a list of grapheme-phoneme pairs, convert each one into a FST
+   fn seq2fst(
+      &mut self, 
+      fst: &mut Vector<LogWeight>, 
+      grapheme_seq: &Vec<String>, 
+      phoneme_seq: &Vec<String>
+   ) {
+      // TODO: converts grapheme-phoneme pair to FST
+      // let mut fst = VectorFst<LogWeight>::new();
+      // let s0 = fst.add_state();
+
+      let mut istate = 0;
+      let mut ostate = 0;
+      for i in 0..grapheme_seq.len() {
+         for j in 0..phoneme_seq.len() {
+            istate = i * (seq2.len() + 1) + j;
+
+            // Epsilon arcs for grapheme_seq
+            if self.grphm_eps {
+               for l in 1..(self.max_phnm_len + 1) {
+                  if j + 1 <= phoneme_seq.len() {
+                     let mut pseq = vec![String::new(); l];
+                     pseq.clone_from_slice(&phoneme_seq[j..j+l]);
+                     let symb = pseq.join("");
+                     let olabel = if self.symbtbl.contains_symbol(symb) {
+                                    self.symbtbl.get_label(symb);
+                                  } else {
+                                    self.symbtbl.add_symbol(symb);
+                                  };
+                     ostate = i * (seq2.len() + 1) + (j + 1);
+                     if ostate + 1 > fst.num_states() {
+                        fst.add_states(ostate - fst.num_states() + 1);
+                     }
+                     // symbtbl[0] is epsilon
+                     fst.add_tr(istate, Tr::new(0, olabel, 1.0, ostate));
+                  }
+               }
+            }
+
+            // Epsilon arcs for phoneme_seq
+            if self.phnm_eps {
+               for k in (1..(self.max_grphm_len + 1)) {
+                  if (i + k <= grapheme_seq.len()) {
+                     let mut gseq = vec![String::new(); l];
+                     gseq.clone_from_slice(&grapheme_seq[i..i+k]);
+                     let symb = gseq.join("");
+                     let ilabel = if self.symbtbl.contains_symbol(symb) {
+                                    self.symbtbl.get_label(symb);
+                                  } else {
+                                    self.symbtbl.add_symbol(symb);
+                                  };
+                     ostate = (i + k) * (seq2.len() + 1) + j;
+                     if ostate + 1 > fst.num_states() {
+                        fst.add_states(ostate - fst.num_states() + 1);
+                     }
+                     // symbtbl[0] is epsilon
+                     fst.add_tr(istate, Tr::new(ilabel, 0, 1.0, ostate));
+                  }
+               }
+            }
+
+            // All the other arcs
+            for k in (1..(self.max_grphm_len + 1)) {
+               for l in (1..(self.max_phnm_len + 1)) {
+                  // This says only 1-M and N-1 allowed, no M-N links!
+                  if self.restrict && l > 1 && k > 1 {
+                     continue
+                  } else {
+                     if (i + k) <= grapheme_seq.len() && (j + l) <= phoneme_seq.len() {
+                        let mut gseq = vec![String::new(); l];
+                        gseq.clone_from_slice(&grapheme_seq[i..i+k]);
+                        let g_symb = gseq.join("");
+                        let ilabel = if self.symbtbl.contains_symbol(g_symb) {
+                                       self.symbtbl.get_label(g_symb)
+                                     } else {
+                                       self.symbtbl.add_symbol(g_symb)
+                                     };
+
+                        let mut pseq = vec![String::new(); l];
+                        pseq.clone_from_slice(&phoneme_seq[j..j+l]);
+                        let p_symb = pseq.join("");
+                        let olabel = if self.symbtbl.contains_symbol(p_symb) {
+                                       self.symbtbl.get_label(p_symb);
+                                     } else {
+                                       self.symbtbl.add_symbol(p_symb);
+                                     };
+
+                        ostate = (i + k) * (seq2.len() + 1) + (j + 1);
+                        if ostate + 1 > fst.num_states() {
+                           fst.add_states(ostate - fst.num_states() + 1);
+                        }
+                        fst.add_tr(istate, Tr::new(ilabel, olabel, 1.0, outstate));
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      fst.set_start(0);
+      fst.set_final((seq1.len() + 1) * (seq2.len() + 1) - 1, LogWeight::one());
+
+      // Removes all states/transitions not connected to the final state
+      connect(&mut fst)?;
+   }
+
+   fn initialize(&mut self, num_unique_edges: f32) {
+      let weight = 1.0 / num_unique_edges;
+      for lattice in self.lattices {
+         for state_id in lattice.states_iter() {
+            let trs = lattice.tr_iter_mut(state_id)?;
+            for i in 0..trs.len() {
+               trs.set_weight(i, LogWeight::from(weight));
+            }
+         }
+      }
    }
 
    fn expectation(&mut self) { // return necessary?
