@@ -242,7 +242,10 @@ impl M2MFstAligner {
                let tr_opt = trs.get(i);
                match tr_opt {
                   Some(tr) => {
-                     trs.set_weight(i, self.partial_counts.get(&GPAlign(tr.ilabel, tr.olabel)).clone());
+                     // trs.set_weight(i, self.partial_counts.get(&GPAlign(tr.ilabel, tr.olabel)).clone());
+                     if let Some(partial_count) = self.partial_counts.get_mut(&GPAlign(tr.ilabel, tr.olabel)) {
+                        trs.set_weight(i, partial_count.clone());
+                     }
                   },
                   _ => continue, // TODO: shouldn't ever fail, but if it does, maybe throw an error?
                }
