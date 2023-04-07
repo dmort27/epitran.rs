@@ -77,7 +77,7 @@ impl M2MFstAligner {
       let mut ostate = 0;
       for i in 0..grapheme_seq.len() {
          for j in 0..phoneme_seq.len() {
-            istate = i * (seq2.len() + 1) + j;
+            istate = i * (phoneme_seq.len() + 1) + j;
 
             // Epsilon arcs for grapheme_seq
             if self.grphm_eps {
@@ -91,7 +91,7 @@ impl M2MFstAligner {
                                   } else {
                                     self.symbtbl.add_symbol(symb);
                                   };
-                     ostate = i * (seq2.len() + 1) + (j + 1);
+                     ostate = i * (phoneme_seq.len() + 1) + (j + 1);
                      if ostate + 1 > fst.num_states() {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
@@ -113,7 +113,7 @@ impl M2MFstAligner {
                                   } else {
                                     self.symbtbl.add_symbol(symb);
                                   };
-                     ostate = (i + k) * (seq2.len() + 1) + j;
+                     ostate = (i + k) * (phoneme_seq.len() + 1) + j;
                      if ostate + 1 > fst.num_states() {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
@@ -149,7 +149,7 @@ impl M2MFstAligner {
                                        self.symbtbl.add_symbol(p_symb);
                                      };
 
-                        ostate = (i + k) * (seq2.len() + 1) + (j + 1);
+                        ostate = (i + k) * (phoneme_seq.len() + 1) + (j + 1);
                         if ostate + 1 > fst.num_states() {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
@@ -162,7 +162,7 @@ impl M2MFstAligner {
       }
 
       fst.set_start(0);
-      fst.set_final((seq1.len() + 1) * (seq2.len() + 1) - 1, LogWeight::one());
+      fst.set_final((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1, LogWeight::one());
 
       // Removes all states/transitions not connected to the final state
       connect(&mut fst)?;
