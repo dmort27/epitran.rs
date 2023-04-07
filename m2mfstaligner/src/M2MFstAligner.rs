@@ -73,8 +73,8 @@ impl M2MFstAligner {
       // let mut fst = VectorFst<LogWeight>::new();
       // let s0 = fst.add_state();
 
-      let mut istate = 0;
-      let mut ostate = 0;
+      let mut istate;
+      let mut ostate;
       for i in 0..grapheme_seq.len() {
          for j in 0..phoneme_seq.len() {
             istate = i * (phoneme_seq.len() + 1) + j;
@@ -91,7 +91,7 @@ impl M2MFstAligner {
                                   } else {
                                     self.symbtbl.add_symbol(symb)
                                   };
-                     ostate = i * (phoneme_seq.len() + 1) + (j + 1);
+                     ostate = i * (phoneme_seq.len() + 1) + (j + l);
                      if ostate + 1 > fst.num_states() {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
@@ -149,7 +149,7 @@ impl M2MFstAligner {
                                        self.symbtbl.add_symbol(p_symb)
                                      };
 
-                        ostate = (i + k) * (phoneme_seq.len() + 1) + (j + 1);
+                        ostate = (i + k) * (phoneme_seq.len() + 1) + (j + l);
                         if ostate + 1 > fst.num_states() {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
