@@ -96,7 +96,7 @@ impl M2MFstAligner {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
                      // symbtbl[0] is epsilon
-                     fst.add_tr(istate, Tr::new(0, olabel, 1.0, ostate));
+                     fst.add_tr(istate as u32, Tr::new(0, olabel, 1.0, ostate as u32));
                   }
                }
             }
@@ -118,7 +118,7 @@ impl M2MFstAligner {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
                      // symbtbl[0] is epsilon
-                     fst.add_tr(istate, Tr::new(ilabel, 0, 1.0, ostate));
+                     fst.add_tr(istate as u32, Tr::new(ilabel, 0, 1.0, ostate as u32));
                   }
                }
             }
@@ -153,7 +153,7 @@ impl M2MFstAligner {
                         if ostate + 1 > fst.num_states() {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
-                        fst.add_tr(istate, Tr::new(ilabel, olabel, 1.0, ostate));
+                        fst.add_tr(istate as u32, Tr::new(ilabel, olabel, 1.0, ostate as u32));
                      }
                   }
                }
@@ -162,7 +162,7 @@ impl M2MFstAligner {
       }
 
       fst.set_start(0);
-      fst.set_final((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1, LogWeight::one());
+      fst.set_final(((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1) as u32, LogWeight::one());
 
       // Removes all states/transitions not connected to the final state
       connect(&mut fst)?;
