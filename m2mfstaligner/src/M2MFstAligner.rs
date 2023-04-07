@@ -86,8 +86,8 @@ impl M2MFstAligner {
                      let mut pseq = vec![String::new(); l];
                      pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                      let symb = pseq.join("");
-                     let olabel = if self.symbtbl.contains_symbol(symb) {
-                                    self.symbtbl.get_label(symb).unwrap()
+                     let olabel = if self.symbtbl.contains_symbol(&symb) {
+                                    self.symbtbl.get_label(&symb).unwrap()
                                   } else {
                                     self.symbtbl.add_symbol(symb)
                                   };
@@ -108,8 +108,8 @@ impl M2MFstAligner {
                      let mut gseq = vec![String::new(); k];
                      gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                      let symb = gseq.join("");
-                     let ilabel = if self.symbtbl.contains_symbol(symb) {
-                                    self.symbtbl.get_label(symb).unwrap()
+                     let ilabel = if self.symbtbl.contains_symbol(&symb) {
+                                    self.symbtbl.get_label(&symb).unwrap()
                                   } else {
                                     self.symbtbl.add_symbol(symb)
                                   };
@@ -134,8 +134,8 @@ impl M2MFstAligner {
                         let mut gseq = vec![String::new(); l];
                         gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                         let g_symb = gseq.join("");
-                        let ilabel = if self.symbtbl.contains_symbol(g_symb) {
-                                       self.symbtbl.get_label(g_symb).unwrap()
+                        let ilabel = if self.symbtbl.contains_symbol(&g_symb) {
+                                       self.symbtbl.get_label(&g_symb).unwrap()
                                      } else {
                                        self.symbtbl.add_symbol(g_symb)
                                      };
@@ -143,8 +143,8 @@ impl M2MFstAligner {
                         let mut pseq = vec![String::new(); l];
                         pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                         let p_symb = pseq.join("");
-                        let olabel = if self.symbtbl.contains_symbol(p_symb) {
-                                       self.symbtbl.get_label(p_symb).unwrap()
+                        let olabel = if self.symbtbl.contains_symbol(&p_symb) {
+                                       self.symbtbl.get_label(&p_symb).unwrap()
                                      } else {
                                        self.symbtbl.add_symbol(p_symb)
                                      };
