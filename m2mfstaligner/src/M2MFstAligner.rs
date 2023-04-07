@@ -87,9 +87,9 @@ impl M2MFstAligner {
                      pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                      let symb = pseq.join("");
                      let olabel = if self.symbtbl.contains_symbol(symb) {
-                                    self.symbtbl.get_label(symb);
+                                    self.symbtbl.get_label(symb).unwrap()
                                   } else {
-                                    self.symbtbl.add_symbol(symb);
+                                    self.symbtbl.add_symbol(symb)
                                   };
                      ostate = i * (phoneme_seq.len() + 1) + (j + 1);
                      if ostate + 1 > fst.num_states() {
@@ -109,9 +109,9 @@ impl M2MFstAligner {
                      gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                      let symb = gseq.join("");
                      let ilabel = if self.symbtbl.contains_symbol(symb) {
-                                    self.symbtbl.get_label(symb);
+                                    self.symbtbl.get_label(symb).unwrap()
                                   } else {
-                                    self.symbtbl.add_symbol(symb);
+                                    self.symbtbl.add_symbol(symb)
                                   };
                      ostate = (i + k) * (phoneme_seq.len() + 1) + j;
                      if ostate + 1 > fst.num_states() {
@@ -135,7 +135,7 @@ impl M2MFstAligner {
                         gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                         let g_symb = gseq.join("");
                         let ilabel = if self.symbtbl.contains_symbol(g_symb) {
-                                       self.symbtbl.get_label(g_symb)
+                                       self.symbtbl.get_label(g_symb).unwrap()
                                      } else {
                                        self.symbtbl.add_symbol(g_symb)
                                      };
@@ -144,9 +144,9 @@ impl M2MFstAligner {
                         pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                         let p_symb = pseq.join("");
                         let olabel = if self.symbtbl.contains_symbol(p_symb) {
-                                       self.symbtbl.get_label(p_symb);
+                                       self.symbtbl.get_label(p_symb).unwrap()
                                      } else {
-                                       self.symbtbl.add_symbol(p_symb);
+                                       self.symbtbl.add_symbol(p_symb)
                                      };
 
                         ostate = (i + k) * (phoneme_seq.len() + 1) + (j + 1);
