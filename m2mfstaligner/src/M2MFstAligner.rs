@@ -65,7 +65,7 @@ impl M2MFstAligner {
 
    fn seq2fst(
       &mut self, 
-      fst: &mut Vector<LogWeight>, 
+      fst: &mut VectorFst<LogWeight>, 
       grapheme_seq: &Vec<String>, 
       phoneme_seq: &Vec<String>
    ) {
