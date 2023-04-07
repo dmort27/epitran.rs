@@ -82,7 +82,7 @@ impl M2MFstAligner {
             // Epsilon arcs for grapheme_seq
             if self.grphm_eps {
                for l in 1..(self.max_phnm_len + 1) {
-                  if j + 1 <= phoneme_seq.len() {
+                  if j + l <= phoneme_seq.len() {
                      let mut pseq = vec![String::new(); l];
                      pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                      let symb = pseq.join("");
@@ -103,9 +103,9 @@ impl M2MFstAligner {
 
             // Epsilon arcs for phoneme_seq
             if self.phnm_eps {
-               for k in (1..(self.max_grphm_len + 1)) {
-                  if (i + k <= grapheme_seq.len()) {
-                     let mut gseq = vec![String::new(); l];
+               for k in 1..(self.max_grphm_len + 1) {
+                  if i + k <= grapheme_seq.len() {
+                     let mut gseq = vec![String::new(); k];
                      gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                      let symb = gseq.join("");
                      let ilabel = if self.symbtbl.contains_symbol(symb) {
