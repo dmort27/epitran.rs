@@ -153,7 +153,7 @@ impl M2MFstAligner {
                         if ostate + 1 > fst.num_states() {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
-                        fst.add_tr(istate, Tr::new(ilabel, olabel, 1.0, outstate));
+                        fst.add_tr(istate, Tr::new(ilabel, olabel, 1.0, ostate));
                      }
                   }
                }
