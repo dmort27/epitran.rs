@@ -75,8 +75,8 @@ impl M2MFstAligner {
 
       let mut istate;
       let mut ostate;
-      for i in 0..grapheme_seq.len() {
-         for j in 0..phoneme_seq.len() {
+      for i in 0..(grapheme_seq.len() + 1) {
+         for j in 0..(phoneme_seq.len() + 1) {
             istate = i * (phoneme_seq.len() + 1) + j;
 
             // Epsilon arcs for grapheme_seq
@@ -165,7 +165,7 @@ impl M2MFstAligner {
       fst.set_final(((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1) as u32, LogWeight::one());
 
       // Removes all states/transitions not connected to the final state
-      connect(&mut fst)?;
+      connect(&mut fst);
    }
 
    fn initialize(&mut self, num_unique_edges: f32) {
