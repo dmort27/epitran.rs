@@ -131,7 +131,7 @@ impl M2MFstAligner {
                      continue
                   } else {
                      if (i + k) <= grapheme_seq.len() && (j + l) <= phoneme_seq.len() {
-                        let mut gseq = vec![String::new(); l];
+                        let mut gseq = vec![String::new(); k];
                         gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                         let g_symb = gseq.join("");
                         let ilabel = if self.symbtbl.contains_symbol(&g_symb) {
