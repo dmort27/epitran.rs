@@ -97,6 +97,9 @@ impl M2MFstAligner {
                      }
                      // symbtbl[0] is epsilon
                      fst.add_tr(istate as u32, Tr::new(0, olabel, 1.0, ostate as u32));
+                     if !self.partial_counts.contains_key(&GPAlign(0,olabel)) {
+                        self.partial_counts.insert(GPAlign(0,olabel), LogWeight::zero());
+                     }
                   }
                }
             }
@@ -119,6 +122,9 @@ impl M2MFstAligner {
                      }
                      // symbtbl[0] is epsilon
                      fst.add_tr(istate as u32, Tr::new(ilabel, 0, 1.0, ostate as u32));
+                     if !self.partial_counts.contains_key(&GPAlign(ilabel,0)) {
+                        self.partial_counts.insert(GPAlign(ilabel,0), LogWeight::zero());
+                     }
                   }
                }
             }
@@ -154,6 +160,9 @@ impl M2MFstAligner {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
                         fst.add_tr(istate as u32, Tr::new(ilabel, olabel, 1.0, ostate as u32));
+                        if !self.partial_counts.contains_key(&GPAlign(ilabel,olabel)) {
+                           self.partial_counts.insert(GPAlign(ilabel,olabel), LogWeight::zero());
+                        }
                      }
                   }
                }
