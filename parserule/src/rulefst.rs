@@ -1,6 +1,6 @@
 use anyhow::Result;
 use rustfst::algorithms::compose::compose;
-use rustfst::algorithms::{union::union, concat::concat};
+use rustfst::algorithms::{concat::concat, union::union};
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, MutableFst};
 use rustfst::prelude::*;
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::ruleparse::{RegexAST, Statement, RewriteRule};
+use crate::ruleparse::{RegexAST, RewriteRule, Statement};
 
 #[derive(Debug, Clone, Copy)]
 enum LabelColor {
@@ -56,40 +56,46 @@ fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWeight
         match statement {
             Statement::Comment => (),
             Statement::MacroDef((mac, def)) => {
-                macros.insert(mac, def).unwrap();    
+                macros.insert(mac, def).unwrap();
                 ()
-            },
+            }
             Statement::Rule(rule) => {
                 let fst2 = rule_fst(symt.clone(), &macros, rule)?;
                 fst = compose(fst.clone(), fst2)?;
                 ()
-            },
+            }
         }
     }
     Ok(fst)
 }
 
-fn rule_fst(symt: Arc<SymbolTable>, macros: &HashMap<String, RegexAST>, rule: RewriteRule) -> Result<VectorFst<TropicalWeight>> {
+fn rule_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    rule: RewriteRule,
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
     fst.add_state();
     fst.set_start(0)?;
     fst.set_final(0, 0.0)?;
-    let left_fst = context_node_fst(symt.clone(), macros, rule.left).unwrap();
-    let right_fst = context_node_fst(symt.clone(), macros, rule.right).unwrap();
-    let source_fst = output_to_epsilons(context_node_fst(symt.clone(), macros, rule.source).unwrap());
-    let target_fst = output_to_epsilons(context_node_fst(symt.clone(), macros, rule.target).unwrap());
-    if is_cyclic(target_fst.clone()) {
+    let left_fst = left_context_fst(symt.clone(), macros, rule.left).unwrap();
+    let right_fst = right_context_fst(symt.clone(), macros, rule.right).unwrap();
+    let src_fst =
+        output_to_epsilons(source_fst(symt.clone(), macros, rule.source).unwrap());
+    let tgt_fst =
+        input_to_epsilons(target_fst(symt.clone(), macros, rule.target).unwrap());
+    if is_cyclic(tgt_fst.clone()) {
         panic!("Cyclic target FST");
     }
-    let paths: Vec<_> = target_fst.clone().paths_iter().collect();
+    let paths: Vec<_> = tgt_fst.clone().paths_iter().collect();
     if paths.len() > 1 {
         panic!("Non-deterministic target FST");
     }
     concat(&mut fst, &left_fst)?;
-    concat(&mut fst, &target_fst)?;
-    concat(&mut fst, &source_fst)?;
+    concat(&mut fst, &tgt_fst)?;
+    concat(&mut fst, &src_fst)?;
     concat(&mut fst, &right_fst)?;
 
     let start_state = get_start(fst.clone())?;
@@ -102,7 +108,7 @@ fn rule_fst(symt: Arc<SymbolTable>, macros: &HashMap<String, RegexAST>, rule: Re
             }
         }
     }
-    Ok(fst) 
+    Ok(fst)
 }
 
 fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight> {
@@ -110,7 +116,8 @@ fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeigh
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
-            fst2.emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate).unwrap();
+            fst2.emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
+                .unwrap();
         }
     }
     fst2
@@ -121,7 +128,8 @@ fn input_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
-            fst2.emplace_tr(state, 0, tr.olabel, tr.weight, tr.nextstate).unwrap();
+            fst2.emplace_tr(state, 0, tr.olabel, tr.weight, tr.nextstate)
+                .unwrap();
         }
     }
     fst2
@@ -142,8 +150,80 @@ fn context_node_fst(
         RegexAST::Class(v) => class_fst(symt, macros, v),
         RegexAST::ClassComplement(v) => class_complement_fst(symt, macros, v),
         RegexAST::Macro(m) => macro_fst(symt, macros, m),
-        // RegexAST::MacroDef(mdef) => macro_def_fst(symt, macros, mdef),
         RegexAST::Epsilon => epsilon_fst(symt, macros),
+        _ => epsilon_fst(symt, macros),
+    }
+}
+
+fn left_context_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    node: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    match node {
+        RegexAST::Initial(v) => group_fst(symt, macros, vec![*v]),
+        RegexAST::Char(c) => char_fst(symt, macros, c),
+        RegexAST::Group(v) => group_fst(symt, macros, v),
+        RegexAST::Option(n) => option_fst(symt, macros, *n),
+        RegexAST::Star(n) => star_fst(symt, macros, *n),
+        RegexAST::Plus(n) => plus_fst(symt, macros, *n),
+        RegexAST::Disjunction(v) => disjunction_fst(symt, macros, v),
+        RegexAST::Class(v) => class_fst(symt, macros, v),
+        RegexAST::ClassComplement(v) => class_complement_fst(symt, macros, v),
+        RegexAST::Macro(m) => macro_fst(symt, macros, m),
+        RegexAST::Epsilon => epsilon_fst(symt, macros),
+        _ => epsilon_fst(symt, macros),
+    }
+}
+
+fn right_context_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    node: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    match node {
+        RegexAST::Final(v) => group_fst(symt, macros, vec![*v]),
+        RegexAST::Char(c) => char_fst(symt, macros, c),
+        RegexAST::Group(v) => group_fst(symt, macros, v),
+        RegexAST::Option(n) => option_fst(symt, macros, *n),
+        RegexAST::Star(n) => star_fst(symt, macros, *n),
+        RegexAST::Plus(n) => plus_fst(symt, macros, *n),
+        RegexAST::Disjunction(v) => disjunction_fst(symt, macros, v),
+        RegexAST::Class(v) => class_fst(symt, macros, v),
+        RegexAST::ClassComplement(v) => class_complement_fst(symt, macros, v),
+        RegexAST::Macro(m) => macro_fst(symt, macros, m),
+        RegexAST::Epsilon => epsilon_fst(symt, macros),
+        _ => epsilon_fst(symt, macros),
+    }
+}
+
+fn source_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    node: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    match node {
+        RegexAST::Char(c) => char_fst(symt, macros, c),
+        RegexAST::Group(v) => group_fst(symt, macros, v),
+        RegexAST::Option(n) => option_fst(symt, macros, *n),
+        RegexAST::Star(n) => star_fst(symt, macros, *n),
+        RegexAST::Plus(n) => plus_fst(symt, macros, *n),
+        RegexAST::Disjunction(v) => disjunction_fst(symt, macros, v),
+        RegexAST::Class(v) => class_fst(symt, macros, v),
+        RegexAST::ClassComplement(v) => class_complement_fst(symt, macros, v),
+        RegexAST::Macro(m) => macro_fst(symt, macros, m),
+        RegexAST::Epsilon => epsilon_fst(symt, macros),
+        _ => epsilon_fst(symt, macros),
+    }
+}
+
+fn target_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    node: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    match node {
+        RegexAST::Group(v) => group_fst(symt, macros, v),
         _ => epsilon_fst(symt, macros),
     }
 }
@@ -352,8 +432,8 @@ fn disjunction_fst(
     Ok(fst)
 }
 
- /// Returns true if the wFST has a cycle. Otherwise, it returns false.
- pub fn is_cyclic(fst: VectorFst<TropicalWeight>) -> bool {
+/// Returns true if the wFST has a cycle. Otherwise, it returns false.
+pub fn is_cyclic(fst: VectorFst<TropicalWeight>) -> bool {
     let fst = fst.clone();
     let mut stack: Vec<(Action, StateId)> = Vec::new();
     match fst.start() {
@@ -389,7 +469,7 @@ fn disjunction_fst(
 fn get_start(fst: VectorFst<TropicalWeight>) -> Result<StateId> {
     for q in fst.states_iter() {
         if fst.is_start(q) {
-            return Ok(q)
+            return Ok(q);
         }
     }
     panic!("FST has not start state!")

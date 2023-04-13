@@ -20,9 +20,14 @@ pub enum RegexAST {
     Class(Vec<RegexAST>),
     ClassComplement(Vec<RegexAST>),
     Macro(String),
-    // MacroDef((String, Box<RegexAST>)),
+    Initial(Box<RegexAST>),
+    Final(Box<RegexAST>),
     Epsilon,
     Boundary,
+    LeftContext(Box<RegexAST>),
+    RightContext(Box<RegexAST>),
+    Source(Box<RegexAST>),
+    Target(Box<RegexAST>),
     Comment,
 }
 
@@ -42,7 +47,7 @@ pub struct RewriteRule {
 }
 
 fn character(input: &str) -> IResult<&str, RegexAST> {
-    let (input, c) = none_of(" />_()[]-|*+^#%")(input)?;
+    let (input, c) = none_of(" />_()[]-|*+^#:%")(input)?;
     Ok((input, RegexAST::Char(c)))
 }
 
@@ -58,7 +63,7 @@ fn uni_esc(input: &str) -> IResult<&str, RegexAST> {
 }
 
 fn escape(input: &str) -> IResult<&str, RegexAST> {
-    let (input, c) = preceded(tag("\\"), one_of("\\ /<>_()[]-|*+^#%"))(input)?;
+    let (input, c) = preceded(tag("\\"), one_of("\\ /<>_()[]-|*+^#:%"))(input)?;
     Ok((input, RegexAST::Char(c)))
 }
 
@@ -82,6 +87,7 @@ fn complement_class(input: &str) -> IResult<&str, RegexAST> {
 
 fn sequence(input: &str) -> IResult<&str, RegexAST> {
     let (input, g) = many1(alt((
+        mac,
         star,
         plus,
         option,
@@ -89,8 +95,8 @@ fn sequence(input: &str) -> IResult<&str, RegexAST> {
         class,
         complement_class,
         group,
-        mac,
-        boundary,
+        word_initial,
+        word_final,
         uni_esc,
         escape,
         character,
@@ -103,9 +109,42 @@ fn group(input: &str) -> IResult<&str, RegexAST> {
     Ok((input, g))
 }
 
+fn characters(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = many1(character)(input)?;
+    Ok((input, RegexAST::Group(g)))
+}
+
 fn regex(input: &str) -> IResult<&str, RegexAST> {
     let (input, g) = alt((sequence, success(RegexAST::Epsilon)))(input)?;
     Ok((input, g))
+}
+
+fn left_context(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = alt((
+        sequence,
+        value(RegexAST::Boundary, tag("#")),
+        success(RegexAST::Epsilon),
+    ))(input)?;
+    Ok((input, RegexAST::LeftContext(Box::new(g))))
+}
+
+fn right_context(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = alt((
+        sequence,
+        value(RegexAST::Boundary, tag("#")),
+        success(RegexAST::Epsilon),
+    ))(input)?;
+    Ok((input, RegexAST::RightContext(Box::new(g))))
+}
+
+fn source(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = alt((value(RegexAST::Epsilon, tag("0")), sequence))(input)?;
+    Ok((input, RegexAST::Source(Box::new(g))))
+}
+
+fn target(input: &str) -> IResult<&str, RegexAST> {
+    let (input, g) = alt((value(RegexAST::Epsilon, tag("0")), characters))(input)?;
+    Ok((input, RegexAST::Target(Box::new(g))))
 }
 
 fn disjunction(input: &str) -> IResult<&str, RegexAST> {
@@ -137,9 +176,19 @@ fn mac(input: &str) -> IResult<&str, RegexAST> {
     Ok((input, RegexAST::Macro(m.to_string())))
 }
 
-fn boundary(input: &str) -> IResult<&str, RegexAST> {
-    let (input, _) = tag("#")(input)?;
-    Ok((input, RegexAST::Boundary))
+fn boundary_sequence(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = alt((many1(character),))(input)?;
+    Ok((input, RegexAST::Group(m)))
+}
+
+fn word_initial(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = preceded(tag("#"), boundary_sequence)(input)?;
+    Ok((input, RegexAST::Initial(Box::new(m))))
+}
+
+fn word_final(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = terminated(boundary_sequence, tag("#"))(input)?;
+    Ok((input, RegexAST::Final(Box::new(m))))
 }
 
 fn comment(input: &str) -> IResult<&str, RegexAST> {
@@ -163,13 +212,13 @@ fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST)> {
 
 fn rule(input: &str) -> IResult<&str, RewriteRule> {
     let (input, (source, _, target, _, left, _, right, _)) = tuple((
-        regex,
+        source,
         delimited(space0, tag("->"), space0),
-        regex,
+        target,
         delimited(space0, tag("/"), space0),
-        regex,
+        left_context,
         delimited(space0, tag("_"), space0),
-        regex,
+        right_context,
         space0,
     ))(input)?;
     Ok((
@@ -313,25 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sequence3() {
-        debug_assert_eq!(
-            sequence("a[123]#"),
-            Ok((
-                "",
-                RegexAST::Group(vec![
-                    RegexAST::Char('a'),
-                    RegexAST::Class(vec![
-                        RegexAST::Char('1'),
-                        RegexAST::Char('2'),
-                        RegexAST::Char('3')
-                    ]),
-                    RegexAST::Boundary
-                ])
-            ))
-        );
-    }
-
-    #[test]
     fn test_sequence4() {
         debug_assert_eq!(
             sequence("a"),
@@ -403,11 +433,8 @@ mod tests {
     #[test]
     fn test_mac() {
         debug_assert_eq!(
-            regex("::macro::"),
-            Ok((
-                "",
-                RegexAST::Group(vec![RegexAST::Macro("macro".to_string())])
-            ))
+            mac("::macro::"),
+            Ok(("", RegexAST::Macro("macro".to_string())))
         );
     }
 
@@ -456,10 +483,14 @@ mod tests {
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    left: RegexAST::LeftContext(Box::new(RegexAST::Group(vec![RegexAST::Char(
+                        'c'
+                    )]))),
+                    right: RegexAST::RightContext(Box::new(RegexAST::Group(vec![RegexAST::Char(
+                        'd'
+                    )]))),
+                    source: RegexAST::Source(Box::new(RegexAST::Group(vec![RegexAST::Char('a')]))),
+                    target: RegexAST::Target(Box::new(RegexAST::Group(vec![RegexAST::Char('b')]))),
                 }
             ))
         );
@@ -472,10 +503,10 @@ mod tests {
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::Epsilon,
-                    right: RegexAST::Group(vec![RegexAST::Boundary]),
-                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                    left: RegexAST::LeftContext(Box::new(RegexAST::Epsilon)),
+                    right: RegexAST::RightContext(Box::new(RegexAST::Boundary)),
+                    source: RegexAST::Source(Box::new(RegexAST::Group(vec![RegexAST::Char('b')]))),
+                    target: RegexAST::Target(Box::new(RegexAST::Group(vec![RegexAST::Char('p')]))),
                 }
             ))
         )
@@ -484,14 +515,14 @@ mod tests {
     #[test]
     fn test_rule3() {
         debug_assert_eq!(
-            rule(" ->  /  _ "),
+            rule("0 -> 0 /  _ "),
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::Epsilon,
-                    right: RegexAST::Epsilon,
-                    source: RegexAST::Epsilon,
-                    target: RegexAST::Epsilon,
+                    left: RegexAST::LeftContext(Box::new(RegexAST::Epsilon)),
+                    right: RegexAST::RightContext(Box::new(RegexAST::Epsilon)),
+                    source: RegexAST::Source(Box::new(RegexAST::Epsilon)),
+                    target: RegexAST::Target(Box::new(RegexAST::Epsilon)),
                 }
             ))
         )
