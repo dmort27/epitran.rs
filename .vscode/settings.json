@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./m2mfstaligner/Cargo.toml",
+        "./m2mfstaligner/Cargo.toml"
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false
+}
