@@ -82,10 +82,8 @@ fn rule_fst(
     fst.set_final(0, 0.0)?;
     let left_fst = left_context_fst(symt.clone(), macros, rule.left).unwrap();
     let right_fst = right_context_fst(symt.clone(), macros, rule.right).unwrap();
-    let src_fst =
-        output_to_epsilons(source_fst(symt.clone(), macros, rule.source).unwrap());
-    let tgt_fst =
-        input_to_epsilons(target_fst(symt.clone(), macros, rule.target).unwrap());
+    let src_fst = output_to_epsilons(source_fst(symt.clone(), macros, rule.source).unwrap());
+    let tgt_fst = input_to_epsilons(target_fst(symt.clone(), macros, rule.target).unwrap());
     if is_cyclic(tgt_fst.clone()) {
         panic!("Cyclic target FST");
     }
