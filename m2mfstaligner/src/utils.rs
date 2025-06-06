@@ -1,30 +1,36 @@
-fn split_on_graphemes(s: &str) -> Vec<String> {
-   /*
-      Given a string s in UTF-8 encoding, deconstruct s into a vector of its
-      individual graphemes. This works well for languages whose written forms
-      are composed of letters (e.g. English, Arabic, Spanish, German, etc). The
-      result is a vector of individual letters in UTF-8 encoding.
+use std::fs::File;
+use std::io;
+use std::path::Path;
+use unicode_segmentation::UnicodeSegmentation;
 
-      NOTE: This might not work as intended for languages whose written forms
-      cannot be decomposed into letters (e.g. Chinese, Japanese kanji, etc) or
-      into parts (e.g. Korean). Given a string of these languages, this function
-      can split it into individual UTF-8 encoded characters, but they might not
-      be what we want for G2P.
-   */
-   let bytes = s.as_bytes();
-   let mut graphemes = Vec::new();
-   let mut start = 0;
-   let mut i = 0;
-   while i <= bytes.len() {
-      if s.is_char_boundary(i) {
-         let mut temp = vec![0, i - start];
-         temp.clone_from_slice(&bytes[start..i]);
-         let grapheme = String::from_utf8(temp).unwrap();
-         graphemes.push(grapheme);
-         start = i;
-      }
-      i += 1;
+fn read_training_file(filepath: &str) 
+   -> Result<Vec<(Vec<String>, Vec<String>)>, &'static str>
+{
+   let path = Path::new(&filepath);
+   let display = path.display();
+
+   let file = match File::open(&path) {
+      Err(why) => panic!("Could not open {}: {}", display, why),
+      Ok(file) => file,
+   };
+   let mut rdr = csv::ReaderBuilder::new()
+      .has_headers(false)
+      .from_reader(file);
+
+   let mut data = Vec::new();
+   for result in rdr.records() {
+      let record = result.unwrap_or_default();
+      
+      let graphemes: Vec<String> = String::from(&record[0])
+                                    .graphemes(true)
+                                    .map(|s| s.to_string())
+                                    .collect();
+      let phonemes: Vec<String> = String::from(&record[1])
+                                    .split_whitespace()
+                                    .map(|s| s.to_string())
+                                    .collect();
+      data.push((graphemes, phonemes));
    }
 
-   graphemes
+   Ok(data)
 }
