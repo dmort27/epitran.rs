@@ -133,7 +133,8 @@ fn left_context(input: &str) -> IResult<&str, RegexAST> {
         sequence,
         value(RegexAST::Boundary, tag("#")),
         success(RegexAST::Epsilon),
-    )).parse(input)?;
+    ))
+    .parse(input)?;
     Ok((input, RegexAST::LeftContext(Box::new(g))))
 }
 
@@ -142,7 +143,8 @@ fn right_context(input: &str) -> IResult<&str, RegexAST> {
         sequence,
         value(RegexAST::Boundary, tag("#")),
         success(RegexAST::Epsilon),
-    )).parse(input)?;
+    ))
+    .parse(input)?;
     Ok((input, RegexAST::RightContext(Box::new(g))))
 }
 
@@ -161,7 +163,8 @@ fn disjunction(input: &str) -> IResult<&str, RegexAST> {
         nom_char('('),
         separated_list1(nom_char('|'), sequence),
         nom_char(')'),
-    ).parse(input)?;
+    )
+    .parse(input)?;
     Ok((input, RegexAST::Disjunction(g)))
 }
 
@@ -204,7 +207,8 @@ fn comment(input: &str) -> IResult<&str, RegexAST> {
     value(
         RegexAST::Comment,
         pair(nom_char('%'), many0(none_of("\n\r"))),
-    ).parse(input)
+    )
+    .parse(input)
 }
 
 fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST)> {
@@ -215,11 +219,12 @@ fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST)> {
         tag("="),
         space0,
         regex,
-    ).parse(input)?;
+    )
+        .parse(input)?;
     Ok((input, (name.to_string(), re_group)))
 }
 
-fn rule(input: &str) -> IResult<&str, RewriteRule> {
+pub fn rule(input: &str) -> IResult<&str, RewriteRule> {
     let (input, (source, _, target, _, left, _, right, _)) = (
         source,
         delimited(space0, tag("->"), space0),
@@ -229,7 +234,8 @@ fn rule(input: &str) -> IResult<&str, RewriteRule> {
         delimited(space0, tag("_"), space0),
         right_context,
         space0,
-    ).parse(input)?;
+    )
+        .parse(input)?;
     Ok((
         input,
         RewriteRule {
@@ -241,7 +247,7 @@ fn rule(input: &str) -> IResult<&str, RewriteRule> {
     ))
 }
 
-fn rule_no_env(input: &str) -> IResult<&str, RewriteRule> {
+pub fn rule_no_env(input: &str) -> IResult<&str, RewriteRule> {
     let (input, (source, _, target)) =
         (regex, delimited(space0, tag("->"), space0), regex).parse(input)?;
     Ok((
@@ -255,7 +261,7 @@ fn rule_no_env(input: &str) -> IResult<&str, RewriteRule> {
     ))
 }
 
-fn rule_with_comment(input: &str) -> IResult<&str, RewriteRule> {
+pub fn rule_with_comment(input: &str) -> IResult<&str, RewriteRule> {
     let (input, (source, _, target, _, left, _, right, _, _)) = (
         regex,
         delimited(space0, tag("->"), space0),
@@ -266,7 +272,8 @@ fn rule_with_comment(input: &str) -> IResult<&str, RewriteRule> {
         regex,
         space0,
         comment,
-    ).parse(input)?;
+    )
+        .parse(input)?;
     Ok((
         input,
         RewriteRule {
@@ -292,7 +299,6 @@ fn macro_statement(input: &str) -> IResult<&str, Statement> {
     Ok((input, Statement::MacroDef(m)))
 }
 
-
 pub fn parse_script(input: &str) -> Result<Vec<Statement>, ParseError> {
     let mut parser = pair(
         separated_list0(
@@ -301,7 +307,7 @@ pub fn parse_script(input: &str) -> Result<Vec<Statement>, ParseError> {
         ),
         many0(line_ending),
     );
-    
+
     parser.parse(input).map(|(_, (statements, _))| statements)
 }
 
