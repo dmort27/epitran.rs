@@ -94,6 +94,8 @@ fn complement_class(input: &str) -> IResult<&str, RegexAST> {
 
 fn sequence(input: &str) -> IResult<&str, RegexAST> {
     let mut parser = many1(alt((
+        boundary_mark,
+        epsilon_mark,
         mac,
         star,
         plus,
@@ -203,6 +205,16 @@ fn word_final(input: &str) -> IResult<&str, RegexAST> {
     Ok((input, RegexAST::Final(Box::new(m))))
 }
 
+fn boundary_mark(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = value(RegexAST::Boundary, tag("#")).parse(input)?;
+    Ok((input, m))
+}
+
+fn epsilon_mark(input: &str) -> IResult<&str, RegexAST> {
+    let (input, m) = value(RegexAST::Epsilon, tag("0")).parse(input)?;
+    Ok((input, m))
+}
+
 fn comment(input: &str) -> IResult<&str, RegexAST> {
     value(
         RegexAST::Comment,
@@ -224,15 +236,38 @@ fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST)> {
     Ok((input, (name.to_string(), re_group)))
 }
 
+// pub fn rule(input: &str) -> IResult<&str, RewriteRule> {
+//     let (input, (source, _, target, _, left, _, right, _)) = (
+//         source,
+//         delimited(space0, tag("->"), space0),
+//         target,
+//         delimited(space0, tag("/"), space0),
+//         left_context,
+//         delimited(space0, tag("_"), space0),
+//         right_context,
+//         space0,
+//     )
+//         .parse(input)?;
+//     Ok((
+//         input,
+//         RewriteRule {
+//             source,
+//             target,
+//             left,
+//             right,
+//         },
+//     ))
+// }
+
 pub fn rule(input: &str) -> IResult<&str, RewriteRule> {
     let (input, (source, _, target, _, left, _, right, _)) = (
-        source,
+        regex,
         delimited(space0, tag("->"), space0),
-        target,
+        regex,
         delimited(space0, tag("/"), space0),
-        left_context,
+        regex,
         delimited(space0, tag("_"), space0),
-        right_context,
+        regex,
         space0,
     )
         .parse(input)?;
@@ -478,14 +513,10 @@ mod tests {
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::LeftContext(Box::new(RegexAST::Group(vec![RegexAST::Char(
-                        'c'
-                    )]))),
-                    right: RegexAST::RightContext(Box::new(RegexAST::Group(vec![RegexAST::Char(
-                        'd'
-                    )]))),
-                    source: RegexAST::Source(Box::new(RegexAST::Group(vec![RegexAST::Char('a')]))),
-                    target: RegexAST::Target(Box::new(RegexAST::Group(vec![RegexAST::Char('b')]))),
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
                 }
             ))
         );
@@ -498,10 +529,10 @@ mod tests {
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::LeftContext(Box::new(RegexAST::Epsilon)),
-                    right: RegexAST::RightContext(Box::new(RegexAST::Boundary)),
-                    source: RegexAST::Source(Box::new(RegexAST::Group(vec![RegexAST::Char('b')]))),
-                    target: RegexAST::Target(Box::new(RegexAST::Group(vec![RegexAST::Char('p')]))),
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Group(vec![RegexAST::Boundary]),
+                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
                 }
             ))
         )
@@ -514,10 +545,10 @@ mod tests {
             Ok((
                 "",
                 RewriteRule {
-                    left: RegexAST::LeftContext(Box::new(RegexAST::Epsilon)),
-                    right: RegexAST::RightContext(Box::new(RegexAST::Epsilon)),
-                    source: RegexAST::Source(Box::new(RegexAST::Epsilon)),
-                    target: RegexAST::Target(Box::new(RegexAST::Epsilon)),
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Epsilon,
+                    source: RegexAST::Group(vec![RegexAST::Epsilon]),
+                    target: RegexAST::Group(vec![RegexAST::Epsilon]),
                 }
             ))
         )
