@@ -20,14 +20,8 @@ pub enum RegexAST {
     Class(Vec<RegexAST>),
     ClassComplement(Vec<RegexAST>),
     Macro(String),
-    Initial(Box<RegexAST>),
-    Final(Box<RegexAST>),
     Epsilon,
     Boundary,
-    LeftContext(Box<RegexAST>),
-    RightContext(Box<RegexAST>),
-    Source(Box<RegexAST>),
-    Target(Box<RegexAST>),
     Comment,
 }
 
@@ -104,8 +98,6 @@ fn sequence(input: &str) -> IResult<&str, RegexAST> {
         class,
         complement_class,
         group,
-        word_initial,
-        word_final,
         uni_esc,
         escape,
         character,
@@ -158,21 +150,6 @@ fn option(input: &str) -> IResult<&str, RegexAST> {
 fn mac(input: &str) -> IResult<&str, RegexAST> {
     let (input, m) = delimited(tag("::"), alpha1, tag("::")).parse(input)?;
     Ok((input, RegexAST::Macro(m.to_string())))
-}
-
-fn boundary_sequence(input: &str) -> IResult<&str, RegexAST> {
-    let (input, m) = alt((many1(character),)).parse(input)?;
-    Ok((input, RegexAST::Group(m)))
-}
-
-fn word_initial(input: &str) -> IResult<&str, RegexAST> {
-    let (input, m) = preceded(tag("#"), boundary_sequence).parse(input)?;
-    Ok((input, RegexAST::Initial(Box::new(m))))
-}
-
-fn word_final(input: &str) -> IResult<&str, RegexAST> {
-    let (input, m) = terminated(boundary_sequence, tag("#")).parse(input)?;
-    Ok((input, RegexAST::Final(Box::new(m))))
 }
 
 fn boundary_mark(input: &str) -> IResult<&str, RegexAST> {

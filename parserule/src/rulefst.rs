@@ -1,6 +1,8 @@
 //! Defines WFSTs for implementing the rules in an Epitran processor file (as
 //! parsed by the `ruleparse`` module).
 
+// cSpell:disable
+
 use anyhow::Result;
 // use itertools::{concat, Itertools};
 use rustfst::algorithms::compose::compose;
@@ -36,7 +38,7 @@ pub fn unicode_symbol_table() -> Arc<SymbolTable> {
     let mut symt = SymbolTable::new();
     symt.add_symbol("#");
     (1..0xFFFF)
-        .map(|i| char::from_u32(i))
+        .map(char::from_u32)
         .filter_map(|i| i)
         .filter(|&c| c != '#')
         .for_each(|i| {
@@ -63,7 +65,6 @@ pub fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWe
             Statement::Comment => (),
             Statement::MacroDef((mac, def)) => {
                 macros.insert(mac, def).unwrap_or(RegexAST::Epsilon);
-                ()
             }
             Statement::Rule(rule) => {
                 let fst2 = rule_fst(symt.clone(), &macros, rule.clone())
@@ -75,7 +76,6 @@ pub fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWe
                     })
                     .unwrap_or(VectorFst::<TropicalWeight>::new());
                 fst = compose(fst.clone(), fst2)?;
-                ()
             }
         }
     }
@@ -178,7 +178,7 @@ fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeigh
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
-            let _ = fst2
+            fst2
                 .emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
                 .inspect_err(|e| {
                     println!(
@@ -218,7 +218,7 @@ pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWe
     let q0 = fst.add_state();
     fst.set_start(q0)?;
     fst.set_final(q0, 0.0)?;
-    for (label, _) in symt.iter().filter(|(_, s)| *s != "<eps>".to_string()) {
+    for (label, _) in symt.iter().filter(|(_, s)| *s != "<eps>") {
         fst.add_tr(q0, Tr::new(label, label, 10.0, q0))?;
     }
     Ok(fst)
@@ -453,23 +453,6 @@ pub fn apply_fst_to_string(
     let composed_fst: VectorFst<TropicalWeight> = compose(acc, fst)?;
     // println!("composed_fst={:?}", composed_fst);
 
-    /*   let _ = composed_fst.draw(
-        "composed_fst.dot",
-        &DrawingConfig {
-            vertical: false,
-            size: (Some((5.0, 5.0))),
-            title: ("Simple Rule".to_string()),
-            portrait: (true),
-            ranksep: (None),
-            nodesep: (None),
-            fontsize: (12),
-            acceptor: (false),
-            show_weight_one: (true),
-            print_weight: (true),
-        },
-    );
-    */
-
     Ok(composed_fst)
 }
 
@@ -557,7 +540,10 @@ mod tests {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule(rule_str).unwrap();
         let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule).unwrap();
-        assert_eq!(test_apply(symt.clone(), fst, input.to_string()), output.to_string())   
+        assert_eq!(
+            test_apply(symt.clone(), fst, input.to_string()),
+            output.to_string()
+        )
     }
 
     #[test]
@@ -566,7 +552,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "cddda",
-            "cdddb"
+            "cdddb",
         )
     }
 
@@ -576,7 +562,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ca",
-            "cb"
+            "cb",
         )
     }
 
@@ -586,7 +572,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ddda",
-            "ddda"
+            "ddda",
         )
     }
 
@@ -596,7 +582,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "cda",
-            "cdb"
+            "cdb",
         )
     }
 
@@ -606,7 +592,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "ca",
-            "ca"
+            "ca",
         )
     }
 
@@ -616,7 +602,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdcda",
-            "cdcdcdb"
+            "cdcdcdb",
         )
     }
 
@@ -626,7 +612,7 @@ mod tests {
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdca",
-            "cdcdca"
+            "cdcdca",
         )
     }
 
