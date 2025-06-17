@@ -14,6 +14,7 @@ use std::char;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::process::Command;
 use std::sync::Arc;
 
 use crate::ruleparse::{rule, rule_no_env, rule_with_comment, RegexAST, RewriteRule, Statement};
@@ -91,6 +92,8 @@ fn rule_fst(
     macros: &HashMap<String, RegexAST>,
     rule: RewriteRule,
 ) -> Result<VectorFst<TropicalWeight>> {
+    println!("--- rule={:?}", rule);
+
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -110,21 +113,8 @@ fn rule_fst(
     let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right).unwrap();
     let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone()).unwrap();
 
-    let _ = src_fst.draw(
-        "fst.dot",
-        &DrawingConfig {
-            vertical: false,
-            size: (Some((5.0, 5.0))),
-            title: ("Source FST before adding root".to_string()),
-            portrait: (true),
-            ranksep: (None),
-            nodesep: (None),
-            fontsize: (12),
-            acceptor: (false),
-            show_weight_one: (true),
-            print_weight: (true),
-        },
-    );
+    println!("--- left_fst={:?}", left_fst);
+    println!("--- right_fst={:?}", right_fst);
 
     let _ = concat(&mut fst, &left_fst);
     let _ = concat(&mut fst, &src_fst);
@@ -149,8 +139,8 @@ fn rule_fst(
         "root_fst.dot",
         &DrawingConfig {
             vertical: false,
-            size: (Some((5.0, 5.0))),
-            title: ("Root FST".to_string()),
+            size: (Some((10.0, 10.0))),
+            title: ("Source FST before adding root".to_string()),
             portrait: (true),
             ranksep: (None),
             nodesep: (None),
@@ -160,6 +150,15 @@ fn rule_fst(
             print_weight: (true),
         },
     );
+    Command::new("dot")
+        .args(["-Tpdf", "-oroot_fst.pdf", "root_fst.dot"])
+        .spawn()
+        .expect("Could not run dot on dot file \"fst.dot\".");
+
+    Command::new("open")
+        .arg("root_fst.pdf")
+        .spawn()
+        .expect("Could not open \"root_fst.pdf\".");
 
     let _ = rm_epsilon(&mut root);
 
@@ -250,7 +249,9 @@ fn node_fst(
             let _ = concat(&mut fst, &fst2);
         }
         RegexAST::Char(c) => {
-            let label = symt.get_label(c.to_string()).expect("Could not find label for symbol {c.to_string()}");
+            let label = symt
+                .get_label(c.to_string())
+                .expect("Could not find label for symbol {c.to_string()}");
             let fst2: VectorFst<TropicalWeight> = fst![label => label; 0.0];
             concat(&mut fst, &fst2)?;
             // println!("char fst={:#?}", fst);
@@ -258,17 +259,27 @@ fn node_fst(
             // let last_final_state = fst.final_states_iter().max().unwrap();
         }
         RegexAST::Disjunction(nodes) => {
-        for node in nodes {
-            let fst2 = node_fst(symt.clone(), macros, node)?;
-            let _ = union(&mut fst, &fst2);
+            let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
+            let q0 = fst.add_state();
+            let q1 = fst.add_state();
+            let _ = fst.emplace_tr(q0, 0, 0, TropicalWeight::zero(), q1);
+            for node in nodes {
+                let case_fst = node_fst(symt.clone(), macros, node)?;
+                let _ = union(&mut fst2, &case_fst);
+            }
+            let _ = concat(&mut fst, &fst2);
         }
-        }   
         RegexAST::Class(nodes) => {
-        for node in nodes {
-            let fst2 = node_fst(symt.clone(), macros, node)?;
-            let _ = union(&mut fst, &fst2);
+            let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
+            let q0 = fst.add_state();
+            let q1 = fst.add_state();
+            let _ = fst.emplace_tr(q0, 0, 0, TropicalWeight::zero(), q1);
+            for node in nodes {
+                let case_fst = node_fst(symt.clone(), macros, node)?;
+                let _ = union(&mut fst2, &case_fst);
+            }
+            let _ = concat(&mut fst, &fst2);
         }
-        }   
         _ => (),
     }
 
@@ -573,7 +584,7 @@ mod tests {
         );
     }
 
-        #[test]
+    #[test]
     fn test_rule_class() {
         let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
@@ -582,11 +593,10 @@ mod tests {
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
             test_apply(symt, fst, "#pabaaa#".to_string()),
-            "pibiaa#".to_string()
+            "#pibiaa#".to_string()
         );
     }
 
-    
     #[test]
     fn test_concat() {
         let mut fst1 = VectorFst::<TropicalWeight>::new();
