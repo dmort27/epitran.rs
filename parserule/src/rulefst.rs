@@ -224,6 +224,7 @@ pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWe
     Ok(fst)
 }
 
+/// Interpret an RegexAST node as a wFST
 fn node_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
@@ -232,26 +233,34 @@ fn node_fst(
     let mut fst: VectorFst<TropicalWeight> = fst![0 => 0];
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    // let last_final_state = 1;
 
     match node {
+        // Interpret an Epsilon node (leaves `fst` unchanged, since it already includes an epsilon transition).
         RegexAST::Epsilon => (),
+
+        // Interpret a group (a sequence of nodes)
         RegexAST::Group(nodes) => {
             for node2 in nodes {
                 let fst2 = node_fst(symt.clone(), macros, node2)?;
                 let _ = concat(&mut fst, &fst2);
             }
         }
+
+        // Interpret a boundary symbol.
         RegexAST::Boundary => {
             let bnd_label = symt.get_label("#").unwrap_or(1);
             let fst2: VectorFst<TropicalWeight> = fst![bnd_label];
             let _ = concat(&mut fst, &fst2);
         }
+
+        // Interpret a character.
         RegexAST::Char(c) => {
             let label = symt.get_label(c.to_string()).unwrap_or(0);
             let fst2: VectorFst<TropicalWeight> = fst![label => label; 0.0];
             concat(&mut fst, &fst2)?;
         }
+
+        // Interpret a disjunction (a set of mutually-exclusive sequences).
         RegexAST::Disjunction(nodes) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst.add_state();
@@ -263,6 +272,8 @@ fn node_fst(
             }
             let _ = concat(&mut fst, &fst2);
         }
+
+        // Interpret a character class (a set of characters any of which match the expression).
         RegexAST::Class(nodes) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst.add_state();
@@ -274,6 +285,67 @@ fn node_fst(
             }
             let _ = concat(&mut fst, &fst2);
         }
+
+        // Interpret a Kleene star.
+        RegexAST::Star(node) => {
+            let mut fst2 = node_fst(symt, macros, *node)?;
+            let start_state = match fst2.start() {
+                Some(state) => state,
+                None => {
+                    println!("Ill-formed wFST with no start state.");
+                    let q0 = fst2.add_state();
+                    fst2.set_start(q0)?;
+                    let q1 = fst2.add_state();
+                    fst2.set_final(q1, 0.0)?;
+                    q0
+                }
+            };
+            let final_state = fst2.add_state();
+            fst2.set_final(final_state, 0.0)?;
+            fst2.clone().final_states_iter().for_each(|state_id| {
+                let _ = fst2.emplace_tr(state_id, 0, 0, 0.0, final_state);
+            });
+            let _ = fst2.emplace_tr(final_state, 0, 0, 0.0, start_state);
+            let _ = fst2.emplace_tr(start_state, 0, 0, 0.0, final_state);
+            concat(&mut fst, &fst2)
+                .inspect_err(|e| {
+                    println!(
+                    "{e}: Could not concatenate wFSTs in constructing a Kleene star expression."
+                )
+                })
+                .unwrap_or_default();
+        }
+
+        // Interpret a Kleene plus.
+        RegexAST::Plus(node) => {
+            let mut fst2 = node_fst(symt, macros, *node)?;
+            let start_state = match fst2.start() {
+                Some(state) => state,
+                None => {
+                    println!("Ill-formed wFST with no start state.");
+                    let q0 = fst2.add_state();
+                    fst2.set_start(q0)?;
+                    let q1 = fst2.add_state();
+                    fst2.set_final(q1, 0.0)?;
+                    q0
+                }
+            };
+            let final_state = fst2.add_state();
+            fst2.set_final(final_state, 0.0)?;
+            fst2.clone().final_states_iter().for_each(|state_id| {
+                let _ = fst2.emplace_tr(state_id, 0, 0, 0.0, final_state);
+            });
+            let _ = fst2.emplace_tr(final_state, 0, 0, 0.0, start_state);
+            concat(&mut fst, &fst2)
+                .inspect_err(|e| {
+                    println!(
+                    "{e}: Could not concatenate wFSTs in constructing a Kleene star expression."
+                )
+                })
+                .unwrap_or_default();
+        }
+
+        // Parses everything else as no change. This should never happen.
         _ => (),
     }
 
@@ -480,6 +552,43 @@ pub fn test_apply(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input:
 mod tests {
     use super::*;
     use crate::ruleparse::{rule, rule_no_env};
+
+    fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
+        let macros: &HashMap<String, RegexAST> = &HashMap::new();
+        let (_, rewrite_rule) = rule(rule_str).unwrap();
+        let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule).unwrap();
+        assert_eq!(test_apply(symt.clone(), fst, input.to_string()), output.to_string())   
+    }
+
+    #[test]
+    fn test_kleene_star1() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd* _ ",
+            "cddda",
+            "cdddb"
+        )
+    }
+
+    #[test]
+    fn test_kleene_star2() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd* _ ",
+            "ca",
+            "cb"
+        )
+    }
+
+    #[test]
+    fn test_kleene_star3    () {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd* _ ",
+            "ddda",
+            "ddda"
+        )
+    }
 
     #[test]
     fn test_char1() {
