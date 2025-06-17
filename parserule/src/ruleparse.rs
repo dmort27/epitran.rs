@@ -120,7 +120,7 @@ fn group(input: &str) -> IResult<&str, RegexAST> {
     Ok((input, g))
 }
 
-fn characters(input: &str) -> IResult<&str, RegexAST> {
+pub fn characters(input: &str) -> IResult<&str, RegexAST> {
     let (input, g) = many1(character).parse(input)?;
     Ok((input, RegexAST::Group(g)))
 }
@@ -128,36 +128,6 @@ fn characters(input: &str) -> IResult<&str, RegexAST> {
 fn regex(input: &str) -> IResult<&str, RegexAST> {
     let (input, g) = alt((sequence, success(RegexAST::Epsilon))).parse(input)?;
     Ok((input, g))
-}
-
-fn left_context(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = alt((
-        sequence,
-        value(RegexAST::Boundary, tag("#")),
-        success(RegexAST::Epsilon),
-    ))
-    .parse(input)?;
-    Ok((input, RegexAST::LeftContext(Box::new(g))))
-}
-
-fn right_context(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = alt((
-        sequence,
-        value(RegexAST::Boundary, tag("#")),
-        success(RegexAST::Epsilon),
-    ))
-    .parse(input)?;
-    Ok((input, RegexAST::RightContext(Box::new(g))))
-}
-
-fn source(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = alt((value(RegexAST::Epsilon, tag("0")), sequence)).parse(input)?;
-    Ok((input, RegexAST::Source(Box::new(g))))
-}
-
-fn target(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = alt((value(RegexAST::Epsilon, tag("0")), characters)).parse(input)?;
-    Ok((input, RegexAST::Target(Box::new(g))))
 }
 
 fn disjunction(input: &str) -> IResult<&str, RegexAST> {
