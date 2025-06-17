@@ -13,6 +13,7 @@ use rustfst::utils::{acceptor, transducer};
 use std::char;
 use std::collections::HashMap;
 // use std::process::Command;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
@@ -250,9 +251,6 @@ fn node_fst(
             let label = symt.get_label(c.to_string()).unwrap_or(0);
             let fst2: VectorFst<TropicalWeight> = fst![label => label; 0.0];
             concat(&mut fst, &fst2)?;
-            // println!("char fst={:#?}", fst);
-            // rm_epsilon(&mut fst)?;
-            // let last_final_state = fst.final_states_iter().max().unwrap();
         }
         RegexAST::Disjunction(nodes) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
@@ -428,15 +426,15 @@ pub fn decode_paths_through_fst(
 ) -> Vec<(TropicalWeight, String)> {
     let symt: Arc<SymbolTable> = symt.clone();
     let paths: Vec<_> = fst
-    .string_paths_iter()
-    .inspect_err(|e| println!("{e}: error iterating over paths."))
-    .unwrap()
-    .collect();
+        .string_paths_iter()
+        .inspect_err(|e| println!("{e}: error iterating over paths."))
+        .unwrap()
+        .collect();
     let mut outputs: Vec<(TropicalWeight, String)> = paths
         .iter()
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
         .collect();
-    outputs.sort_unstable_by(|(w1, _), (w2, _)| w1.partial_cmp(w2).unwrap());
+    outputs.sort_unstable_by(|(w1, _), (w2, _)| w1.partial_cmp(w2).unwrap_or(Ordering::Equal));
     println!("\n*** outputs={:?}", outputs);
     outputs
 }
@@ -445,7 +443,7 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
     let symt = symt.clone();
     path.olabels()
         .iter()
-        .map(|&l| symt.get_symbol(l).unwrap())
+        .map(|&l| symt.get_symbol(l).unwrap_or(""))
         .map(|s| s.to_string())
         .collect::<Vec<String>>()
         .join("")
