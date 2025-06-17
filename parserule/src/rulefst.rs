@@ -9,15 +9,13 @@ use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
-use rustfst::DrawingConfig;
+// use rustfst::DrawingConfig;
 use std::char;
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::collections::HashSet;
-use std::process::Command;
+// use std::process::Command;
 use std::sync::Arc;
 
-use crate::ruleparse::{rule, rule_no_env, rule_with_comment, RegexAST, RewriteRule, Statement};
+use crate::ruleparse::{RegexAST, RewriteRule, Statement};
 
 #[derive(Debug, Clone, Copy)]
 enum LabelColor {
@@ -63,11 +61,18 @@ pub fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWe
         match statement {
             Statement::Comment => (),
             Statement::MacroDef((mac, def)) => {
-                macros.insert(mac, def).unwrap();
+                macros.insert(mac, def).unwrap_or(RegexAST::Epsilon);
                 ()
             }
             Statement::Rule(rule) => {
-                let fst2 = rule_fst(symt.clone(), &macros, rule)?;
+                let fst2 = rule_fst(symt.clone(), &macros, rule.clone())
+                    .inspect_err(|e| {
+                        println!(
+                            "Failed to build rule {:?} having macros {:?}: {}",
+                            rule, macros, e
+                        )
+                    })
+                    .unwrap_or(VectorFst::<TropicalWeight>::new());
                 fst = compose(fst.clone(), fst2)?;
                 ()
             }
@@ -106,12 +111,12 @@ fn rule_fst(
     // Compute core (L[S->T]R)
 
     let src_fst: VectorFst<TropicalWeight> =
-        output_to_epsilons(node_fst(symt.clone(), macros, rule.source).unwrap());
+        output_to_epsilons(node_fst(symt.clone(), macros, rule.source)?);
     let tgt_fst: VectorFst<TropicalWeight> =
-        input_to_epsilons(node_fst(symt.clone(), macros, rule.target).unwrap());
-    let left_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.left).unwrap();
-    let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right).unwrap();
-    let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone()).unwrap();
+        input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
+    let left_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.left)?;
+    let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right)?;
+    let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
     println!("--- left_fst={:?}", left_fst);
     println!("--- right_fst={:?}", right_fst);
@@ -129,12 +134,13 @@ fn rule_fst(
     let _ = fst.emplace_tr(first_state, 0, 0, 10.0, last_state);
     let _ = fst.set_final(last_state, 0.0);
 
-    let mut root: VectorFst<TropicalWeight> = universal_acceptor(symt.clone()).unwrap();
+    let mut root: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
     let _ = concat(&mut root, &fst);
 
     let _ = root.set_start(0);
 
+    /*
     let _ = root.draw(
         "root_fst.dot",
         &DrawingConfig {
@@ -159,6 +165,7 @@ fn rule_fst(
         .arg("root_fst.pdf")
         .spawn()
         .expect("Could not open \"root_fst.pdf\".");
+    */
 
     let _ = rm_epsilon(&mut root);
 
@@ -170,8 +177,15 @@ fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeigh
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
-            fst2.emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
-                .unwrap();
+            let _ = fst2
+                .emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
+                .inspect_err(|e| {
+                    println!(
+                        "{e}: Cannot emplace transition from {state} to {}.",
+                        tr.nextstate
+                    )
+                })
+                .unwrap_or(());
         }
     }
     fst2
@@ -179,35 +193,19 @@ fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeigh
 
 fn input_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight> {
     let mut fst2 = fst.clone();
-    // println!("In input_to_epsilons, fst2.num_states={:?}", fst2.num_states());
-    // println!("In input_to_epsilons, fst2.start()={:?}", fst2.start());
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
             fst2.emplace_tr(state, 0, tr.olabel, tr.weight, tr.nextstate)
-                .unwrap();
+                .inspect_err(|e| {
+                    println!(
+                        "{e}: Cannot emplace transition from {state} to {}.",
+                        tr.nextstate
+                    )
+                })
+                .unwrap_or(());
         }
     }
-    fst2
-}
-
-fn add_univ_acc_to_right(
-    symt: Arc<SymbolTable>,
-    mut fst: VectorFst<TropicalWeight>,
-) -> VectorFst<TropicalWeight> {
-    let fst2: VectorFst<TropicalWeight> = universal_acceptor(symt).unwrap();
-    let _ = concat(&mut fst, &fst2);
-    let _ = rm_epsilon(&mut fst);
-    fst
-}
-
-fn add_univ_acc_to_left(
-    symt: Arc<SymbolTable>,
-    fst: VectorFst<TropicalWeight>,
-) -> VectorFst<TropicalWeight> {
-    let mut fst2: VectorFst<TropicalWeight> = universal_acceptor(symt).unwrap();
-    let _ = concat(&mut fst2, &fst);
-    let _ = rm_epsilon(&mut fst2);
     fst2
 }
 
@@ -219,7 +217,7 @@ pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWe
     let q0 = fst.add_state();
     fst.set_start(q0)?;
     fst.set_final(q0, 0.0)?;
-    for (label, symbol) in symt.iter().filter(|(l, s)| *s != "<eps>".to_string()) {
+    for (label, _) in symt.iter().filter(|(_, s)| *s != "<eps>".to_string()) {
         fst.add_tr(q0, Tr::new(label, label, 10.0, q0))?;
     }
     Ok(fst)
@@ -239,19 +237,17 @@ fn node_fst(
         RegexAST::Epsilon => (),
         RegexAST::Group(nodes) => {
             for node2 in nodes {
-                let fst2 = node_fst(symt.clone(), macros, node2).unwrap();
+                let fst2 = node_fst(symt.clone(), macros, node2)?;
                 let _ = concat(&mut fst, &fst2);
             }
         }
         RegexAST::Boundary => {
-            let bnd_label = symt.get_label("#>").unwrap();
+            let bnd_label = symt.get_label("#").unwrap_or(1);
             let fst2: VectorFst<TropicalWeight> = fst![bnd_label];
             let _ = concat(&mut fst, &fst2);
         }
         RegexAST::Char(c) => {
-            let label = symt
-                .get_label(c.to_string())
-                .expect("Could not find label for symbol {c.to_string()}");
+            let label = symt.get_label(c.to_string()).unwrap_or(0);
             let fst2: VectorFst<TropicalWeight> = fst![label => label; 0.0];
             concat(&mut fst, &fst2)?;
             // println!("char fst={:#?}", fst);
@@ -384,10 +380,10 @@ pub fn apply_fst_to_string(
     tr_sort(&mut acc, OLabelCompare {});
     tr_sort(&mut fst, ILabelCompare {});
 
-    let composed_fst: VectorFst<TropicalWeight> = compose(acc, fst).unwrap();
+    let composed_fst: VectorFst<TropicalWeight> = compose(acc, fst)?;
     // println!("composed_fst={:?}", composed_fst);
 
-    let _ = composed_fst.draw(
+    /*   let _ = composed_fst.draw(
         "composed_fst.dot",
         &DrawingConfig {
             vertical: false,
@@ -402,6 +398,7 @@ pub fn apply_fst_to_string(
             print_weight: (true),
         },
     );
+    */
 
     Ok(composed_fst)
 }
@@ -430,7 +427,11 @@ pub fn decode_paths_through_fst(
     fst: VectorFst<TropicalWeight>,
 ) -> Vec<(TropicalWeight, String)> {
     let symt: Arc<SymbolTable> = symt.clone();
-    let paths: Vec<_> = fst.string_paths_iter().unwrap().collect();
+    let paths: Vec<_> = fst
+    .string_paths_iter()
+    .inspect_err(|e| println!("{e}: error iterating over paths."))
+    .unwrap()
+    .collect();
     let mut outputs: Vec<(TropicalWeight, String)> = paths
         .iter()
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
@@ -469,8 +470,8 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 /// ```
 pub fn test_apply(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
     let composed_fst = apply_fst_to_string(symt.clone(), fst, input).unwrap();
-    let mut outputs = decode_paths_through_fst(symt.clone(), composed_fst);
-    if let Some((best_weight, best_string)) = outputs.first() {
+    let outputs = decode_paths_through_fst(symt.clone(), composed_fst);
+    if let Some((_, best_string)) = outputs.first() {
         best_string.clone()
     } else {
         "".to_string()
@@ -480,6 +481,7 @@ pub fn test_apply(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ruleparse::{rule, rule_no_env};
 
     #[test]
     fn test_char1() {
