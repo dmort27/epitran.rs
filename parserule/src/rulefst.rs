@@ -39,7 +39,7 @@ pub fn unicode_symbol_table() -> Arc<SymbolTable> {
     symt.add_symbol("#");
     (1..0xFFFF)
         .map(char::from_u32)
-        .filter_map(|i| i)
+        .flatten()
         .filter(|&c| c != '#')
         .for_each(|i| {
             let _ = symt.add_symbol(i);
