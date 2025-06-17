@@ -581,12 +581,52 @@ mod tests {
     }
 
     #[test]
-    fn test_kleene_star3    () {
+    fn test_kleene_star3() {
         evaluate_rule(
             Arc::new(symt!["a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ddda",
             "ddda"
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus3() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd+ _ ",
+            "cda",
+            "cdb"
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus4() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd+ _ ",
+            "ca",
+            "ca"
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus5() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / (cd)+ _ ",
+            "cdcdcda",
+            "cdcdcdb"
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus6() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / (cd)+ _ ",
+            "cdcdca",
+            "cdcdca"
         )
     }
 
