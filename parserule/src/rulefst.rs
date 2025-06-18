@@ -591,6 +591,26 @@ mod tests {
     }
 
     #[test]
+    fn test_option1() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd? _ ",
+            "cda",
+            "cdb",
+        )
+    }
+
+    #[test]
+    fn test_option2() {
+        evaluate_rule(
+            Arc::new(symt!["a", "b", "c", "d"]),
+            "a -> b / cd? _ ",
+            "ca",
+            "cb",
+        )
+    }
+
+    #[test]
     fn test_char1() {
         let symt = unicode_symbol_table();
         // let symt = Arc::new(symt!["#", "a", "b", "c"]);
