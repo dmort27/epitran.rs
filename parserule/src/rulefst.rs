@@ -4,11 +4,14 @@
 // cSpell:disable
 
 use anyhow::Result;
-// use itertools::{concat, Itertools};
 use rustfst::algorithms::compose::compose;
-use rustfst::algorithms::{concat::concat, rm_epsilon::rm_epsilon, tr_sort, union::union};
+use rustfst::algorithms::{
+    add_super_final_state, closure::closure, concat::concat, minimize, rm_epsilon::rm_epsilon,
+    tr_sort, union::union,
+};
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
+// use rustfst::prelude::determinize::{determinize, determinize_with_config, DeterminizeConfig};
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
@@ -168,7 +171,8 @@ fn rule_fst(
         .expect("Could not open \"root_fst.pdf\".");
     */
 
-    let _ = rm_epsilon(&mut root);
+    rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
+    minimize(&mut root).unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
 
     Ok(root)
 }
@@ -178,8 +182,7 @@ fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeigh
     for state in fst2.states_iter() {
         let trs: Vec<Tr<TropicalWeight>> = fst2.pop_trs(state).unwrap_or_default().clone();
         for tr in trs.iter() {
-            fst2
-                .emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
+            fst2.emplace_tr(state, tr.ilabel, 0, tr.weight, tr.nextstate)
                 .inspect_err(|e| {
                     println!(
                         "{e}: Cannot emplace transition from {state} to {}.",
@@ -283,66 +286,37 @@ fn node_fst(
                 let case_fst = node_fst(symt.clone(), macros, node)?;
                 let _ = union(&mut fst2, &case_fst);
             }
-            let _ = concat(&mut fst, &fst2);
+            let _ = concat::concat(&mut fst, &fst2);
         }
 
         // Interpret a Kleene star.
         RegexAST::Star(node) => {
             let mut fst2 = node_fst(symt, macros, *node)?;
-            let start_state = match fst2.start() {
-                Some(state) => state,
-                None => {
-                    println!("Ill-formed wFST with no start state.");
-                    let q0 = fst2.add_state();
-                    fst2.set_start(q0)?;
-                    let q1 = fst2.add_state();
-                    fst2.set_final(q1, 0.0)?;
-                    q0
-                }
-            };
-            let final_state = fst2.add_state();
-            fst2.set_final(final_state, 0.0)?;
-            fst2.clone().final_states_iter().for_each(|state_id| {
-                let _ = fst2.emplace_tr(state_id, 0, 0, 0.0, final_state);
-            });
-            let _ = fst2.emplace_tr(final_state, 0, 0, 0.0, start_state);
-            let _ = fst2.emplace_tr(start_state, 0, 0, 0.0, final_state);
+            closure(&mut fst2, closure::ClosureType::ClosureStar);
             concat(&mut fst, &fst2)
-                .inspect_err(|e| {
-                    println!(
-                    "{e}: Could not concatenate wFSTs in constructing a Kleene star expression."
-                )
-                })
-                .unwrap_or_default();
+                .unwrap_or_else(|e| println!("{e}: Couldn't concatenate wFSTs."));
         }
 
         // Interpret a Kleene plus.
         RegexAST::Plus(node) => {
             let mut fst2 = node_fst(symt, macros, *node)?;
-            let start_state = match fst2.start() {
-                Some(state) => state,
-                None => {
-                    println!("Ill-formed wFST with no start state.");
-                    let q0 = fst2.add_state();
-                    fst2.set_start(q0)?;
-                    let q1 = fst2.add_state();
-                    fst2.set_final(q1, 0.0)?;
-                    q0
-                }
-            };
-            let final_state = fst2.add_state();
-            fst2.set_final(final_state, 0.0)?;
-            fst2.clone().final_states_iter().for_each(|state_id| {
-                let _ = fst2.emplace_tr(state_id, 0, 0, 0.0, final_state);
-            });
-            let _ = fst2.emplace_tr(final_state, 0, 0, 0.0, start_state);
+            closure(&mut fst2, closure::ClosureType::ClosurePlus);
             concat(&mut fst, &fst2)
-                .inspect_err(|e| {
-                    println!(
-                    "{e}: Could not concatenate wFSTs in constructing a Kleene star expression."
-                )
-                })
-                .unwrap_or_default();
+                .unwrap_or_else(|e| println!("{e}: Couldn't concatenate wFSTs."));
+        }
+
+        // Interpret an optional node
+        RegexAST::Option(node) => {
+            let mut fst2: VectorFst<TropicalWeight> = node_fst(symt, macros, *node)?;
+            let start_state = fst2.start().unwrap_or_else(|| {
+                println!("wFST does not have start state.");
+                0
+            });
+            let final_state = add_super_final_state(&mut fst2);
+            fst2.emplace_tr(start_state, 0, 0, 0.0, final_state)
+                .unwrap_or_else(|e| println!("{e}: Could not add transition."));
+            concat(&mut fst, &fst2)
+                .unwrap_or_else(|e| println!("{e}: Could not concatenate wFSTs."));
         }
 
         // Parses everything else as no change. This should never happen.
