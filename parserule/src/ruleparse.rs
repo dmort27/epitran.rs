@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -17,8 +19,8 @@ pub enum RegexAST {
     Star(Box<RegexAST>),
     Plus(Box<RegexAST>),
     Disjunction(Vec<RegexAST>),
-    Class(Vec<RegexAST>),
-    ClassComplement(Vec<RegexAST>),
+    Class(HashSet<String>),
+    ClassComplement(HashSet<String>),
     Macro(String),
     Epsilon,
     Boundary,
@@ -72,8 +74,16 @@ fn class(input: &str) -> IResult<&str, RegexAST> {
         many1(alt((escape, uni_esc, character))),
         nom_char(']'),
     );
-    let (input, s) = parser.parse(input)?;
-    Ok((input, RegexAST::Class(s)))
+    let (input, chars) = parser.parse(input)?;
+    let strings: Vec<String> = chars
+        .iter()
+        .filter_map(|node| match node {
+            RegexAST::Char(c) => Some(c.to_string()),
+            _ => None,
+        })
+        .collect();
+    let set: HashSet<String> = strings.into_iter().collect();
+    Ok((input, RegexAST::Class(set)))
 }
 
 fn complement_class(input: &str) -> IResult<&str, RegexAST> {
@@ -82,8 +92,16 @@ fn complement_class(input: &str) -> IResult<&str, RegexAST> {
         preceded(nom_char('^'), many1(alt((escape, uni_esc, character)))),
         nom_char(']'),
     );
-    let (input, s) = parser.parse(input)?;
-    Ok((input, RegexAST::ClassComplement(s)))
+    let (input, chars) = parser.parse(input)?;
+    let strings: Vec<String> = chars
+        .iter()
+        .filter_map(|node| match node {
+            RegexAST::Char(c) => Some(c.to_string()),
+            _ => None,
+        })
+        .collect();
+    let set: HashSet<String> = strings.into_iter().collect();
+    Ok((input, RegexAST::ClassComplement(set)))
 }
 
 fn sequence(input: &str) -> IResult<&str, RegexAST> {
@@ -317,11 +335,12 @@ mod tests {
             class("[abc]"),
             Ok((
                 "",
-                RegexAST::Class(vec![
-                    RegexAST::Char('a'),
-                    RegexAST::Char('b'),
-                    RegexAST::Char('c')
-                ])
+                RegexAST::Class(
+                    vec!["a", "b", "c"]
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                )
             ))
         );
     }
@@ -332,11 +351,12 @@ mod tests {
             complement_class("[^abc]"),
             Ok((
                 "",
-                RegexAST::ClassComplement(vec![
-                    RegexAST::Char('a'),
-                    RegexAST::Char('b'),
-                    RegexAST::Char('c')
-                ])
+                RegexAST::ClassComplement(
+                    vec!["a", "b", "c"]
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                )
             ))
         );
     }
@@ -365,11 +385,12 @@ mod tests {
                 "",
                 RegexAST::Group(vec![
                     RegexAST::Char('a'),
-                    RegexAST::Class(vec![
-                        RegexAST::Char('d'),
-                        RegexAST::Char('e'),
-                        RegexAST::Char('f')
-                    ])
+                    RegexAST::Class(
+                        vec!["d", "e", "f"]
+                            .into_iter()
+                            .map(|s| s.to_string())
+                            .collect()
+                    )
                 ])
             ))
         );
@@ -416,12 +437,11 @@ mod tests {
             regex("[ab]+"),
             Ok((
                 "",
-                RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Class(vec![
-                    RegexAST::Char('a'),
-                    RegexAST::Char('b')
-                ])))])
+                RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Class(
+                    vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
+                )))])
             ))
-        );
+        )
     }
 
     #[test]
@@ -458,10 +478,9 @@ mod tests {
             regex("[ab]*"),
             Ok((
                 "",
-                RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Class(vec![
-                    RegexAST::Char('a'),
-                    RegexAST::Char('b')
-                ])))])
+                RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Class(
+                    vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
+                )))])
             ))
         );
     }
