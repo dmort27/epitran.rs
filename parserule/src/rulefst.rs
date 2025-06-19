@@ -17,7 +17,7 @@ use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
 use std::char;
 use std::collections::HashMap;
-// use std::process::Command;
+use std::process::Command;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
@@ -59,8 +59,11 @@ pub fn unicode_symbol_table() -> Arc<SymbolTable> {
 /// # Returns
 ///
 /// An WFST corresponding to the script
-pub fn compile_script(statements: Vec<Statement>) -> Result<VectorFst<TropicalWeight>> {
-    let symt = unicode_symbol_table();
+pub fn compile_script(
+    symt: Arc<SymbolTable>,
+    statements: Vec<Statement>,
+) -> Result<VectorFst<TropicalWeight>> {
+    // let symt = unicode_symbol_table();
     let mut fst = universal_acceptor(symt.clone())?;
     let mut macros: HashMap<String, RegexAST> = HashMap::new();
     for statement in statements {
@@ -109,8 +112,8 @@ fn rule_fst(
     let q0 = fst.add_state();
     fst.set_start(0)?;
     let q1 = fst.add_state();
-    fst.set_final(q1, 0.0)?;
-    fst.emplace_tr(q0, 0, 0, 0.0, q1)?;
+    fst.set_final(q1, TropicalWeight::one())?;
+    fst.emplace_tr(q0, 0, 0, TropicalWeight::one(), q1)?;
 
     // Compute core (L[S->T]R)
 
@@ -122,8 +125,8 @@ fn rule_fst(
     let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right)?;
     let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
-    println!("--- left_fst={:?}", left_fst);
-    println!("--- right_fst={:?}", right_fst);
+    println!("--- left_fst={:#?}", left_fst);
+    println!("--- right_fst={:#?}", right_fst);
 
     let _ = concat(&mut fst, &left_fst);
     let _ = concat(&mut fst, &src_fst);
@@ -144,32 +147,30 @@ fn rule_fst(
 
     let _ = root.set_start(0);
 
-    /*
-    let _ = root.draw(
-        "root_fst.dot",
-        &DrawingConfig {
-            vertical: false,
-            size: (Some((10.0, 10.0))),
-            title: ("Source FST before adding root".to_string()),
-            portrait: (true),
-            ranksep: (None),
-            nodesep: (None),
-            fontsize: (12),
-            acceptor: (false),
-            show_weight_one: (true),
-            print_weight: (true),
-        },
-    );
-    Command::new("dot")
-        .args(["-Tpdf", "-oroot_fst.pdf", "root_fst.dot"])
-        .spawn()
-        .expect("Could not run dot on dot file \"fst.dot\".");
+    // let _ = root.draw(
+    //     "root_fst.dot",
+    //     &DrawingConfig {
+    //         vertical: false,
+    //         size: (Some((10.0, 10.0))),
+    //         title: ("Source FST before adding root".to_string()),
+    //         portrait: (true),
+    //         ranksep: (None),
+    //         nodesep: (None),
+    //         fontsize: (12),
+    //         acceptor: (false),
+    //         show_weight_one: (true),
+    //         print_weight: (true),
+    //     },
+    // );
+    // Command::new("dot")
+    //     .args(["-Tpdf", "-oroot_fst.pdf", "root_fst.dot"])
+    //     .spawn()
+    //     .expect("Could not run dot on dot file \"fst.dot\".");
 
-    Command::new("open")
-        .arg("root_fst.pdf")
-        .spawn()
-        .expect("Could not open \"root_fst.pdf\".");
-    */
+    // Command::new("open")
+    //     .arg("root_fst.pdf")
+    //     .spawn()
+    //     .expect("Could not open \"root_fst.pdf\".");
 
     rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
     minimize(&mut root).unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
@@ -277,15 +278,44 @@ fn node_fst(
         }
 
         // Interpret a character class (a set of characters any of which match the expression).
-        RegexAST::Class(nodes) => {
+        RegexAST::Class(class) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
-            let q0 = fst.add_state();
-            let q1 = fst.add_state();
-            let _ = fst.emplace_tr(q0, 0, 0, TropicalWeight::zero(), q1);
-            for node in nodes {
-                let case_fst = node_fst(symt.clone(), macros, node)?;
-                let _ = union(&mut fst2, &case_fst);
-            }
+            let q0 = fst2.add_state();
+            let _ = fst2.set_start(q0);
+            let q1: u32 = fst2.add_state();
+            let _ = fst2.set_final(q1, 0.0);
+            let _ = fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1);
+            class
+                .iter()
+                .map(|s| {
+                    symt.get_label(s).unwrap_or_else(|| {
+                        println!("Symbol {s} is not in symbol table.");
+                        0
+                    })
+                })
+                .for_each(|l| {
+                    fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)
+                        .unwrap();
+                });
+            let _ = concat::concat(&mut fst, &fst2);
+        }
+
+        RegexAST::ClassComplement(mut class) => {
+            let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
+            let q0 = fst2.add_state();
+            let _ = fst2.set_start(q0);
+            let q1: u32 = fst2.add_state();
+            let _ = fst2.set_final(q1, 0.0);
+            let _ = fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1);
+            let _ = fst2.take_final_weight(q0);
+            let _ = class.insert("#".to_string());
+            let _ = class.insert("<eps>".to_string());
+            symt.iter()
+                .filter(|(_, s)| !class.contains(*s))
+                .for_each(|(l, _)| {
+                    fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)
+                        .unwrap();
+                });
             let _ = concat::concat(&mut fst, &fst2);
         }
 
@@ -523,9 +553,22 @@ mod tests {
     #[test]
     fn test_compile_script_basic() {
         let symt = Arc::new(symt!["p", "b", "a", "i"]);
-        let script = parse_script("::voi::=b|a|i\np -> b / (::voi::) _ (::voi::)").unwrap();
+        let script = parse_script("::voi::=(b|a|i)\np -> b / (::voi::) _ (::voi::)").unwrap();
         println!("script={:?}", script);
-        let fst = compile_script(script).unwrap();
+        let fst = compile_script(symt.clone(), script).unwrap();
+        let result = test_apply(symt.clone(), fst, "apbppi".to_string());
+        assert_eq!(result, "abbppi".to_string());
+    }
+
+    #[test]
+    fn test_compile_script_basic_with_comment() {
+        let symt = Arc::new(symt!["p", "b", "a", "i"]);
+        let script = parse_script(
+            "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
+        )
+        .unwrap();
+        println!("script={:?}", script);
+        let fst = compile_script(symt.clone(), script).unwrap();
         let result = test_apply(symt.clone(), fst, "apbppi".to_string());
         assert_eq!(result, "abbppi".to_string());
     }
@@ -743,6 +786,19 @@ mod tests {
         assert_eq!(
             test_apply(symt, fst, "#pabaaa#".to_string()),
             "#pibiaa#".to_string()
+        );
+    }
+
+    #[test]
+    fn test_rule_complement_class() {
+        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
+        let macros: &HashMap<String, RegexAST> = &HashMap::new();
+        let (_, rewrite_rule) = rule("a -> i / [^pb] _ ").unwrap();
+        let fst: VectorFst<TropicalWeight> =
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+        assert_eq!(
+            test_apply(symt, fst, "#pabaa#".to_string()),
+            "#pabai#".to_string()
         );
     }
 
