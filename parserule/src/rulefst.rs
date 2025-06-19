@@ -319,6 +319,16 @@ fn node_fst(
                 .unwrap_or_else(|e| println!("{e}: Could not concatenate wFSTs."));
         }
 
+        RegexAST::Macro(macro_key) => {
+            let macro_node = macros.get(&macro_key).unwrap_or_else(|| {
+                println!("Macro {macro_key} not defined!");
+                &RegexAST::Epsilon
+            });
+            let fst2 = node_fst(symt, macros, macro_node.clone())?;
+            concat(&mut fst, &fst2)
+                .unwrap_or_else(|e| println!("{e}: Could not concatenate wFSTs."));
+        }
+
         // Parses everything else as no change. This should never happen.
         _ => (),
     }
