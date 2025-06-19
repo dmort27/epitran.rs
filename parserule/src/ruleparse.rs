@@ -133,17 +133,20 @@ fn disjunction(input: &str) -> IResult<&str, RegexAST> {
 }
 
 fn plus(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = terminated(alt((group, character, class, disjunction)), nom_char('+')).parse(input)?;
+    let (input, g) =
+        terminated(alt((group, character, class, disjunction)), nom_char('+')).parse(input)?;
     Ok((input, RegexAST::Plus(Box::new(g))))
 }
 
 fn star(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = terminated(alt((group, character, class, disjunction)), nom_char('*')).parse(input)?;
+    let (input, g) =
+        terminated(alt((group, character, class, disjunction)), nom_char('*')).parse(input)?;
     Ok((input, RegexAST::Star(Box::new(g))))
 }
 
 fn option(input: &str) -> IResult<&str, RegexAST> {
-    let (input, g) = terminated(alt((group, character, class, disjunction)), nom_char('?')).parse(input)?;
+    let (input, g) =
+        terminated(alt((group, character, class, disjunction)), nom_char('?')).parse(input)?;
     Ok((input, RegexAST::Option(Box::new(g))))
 }
 
@@ -413,12 +416,10 @@ mod tests {
             regex("[ab]+"),
             Ok((
                 "",
-                RegexAST::Group(vec![
-                    RegexAST::Plus(Box::new(RegexAST::Class(vec![
-                        RegexAST::Char('a'),
-                        RegexAST::Char('b')
-                    ])))
-                ])
+                RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Class(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Char('b')
+                ])))])
             ))
         );
     }
@@ -429,12 +430,10 @@ mod tests {
             regex("(c|d)+"),
             Ok((
                 "",
-                RegexAST::Group(vec![
-                    RegexAST::Plus(Box::new(RegexAST::Disjunction(vec![
-                        RegexAST::Group(vec![RegexAST::Char('c')]),
-                        RegexAST::Group(vec![RegexAST::Char('d')])
-                    ])))
-                ])
+                RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Disjunction(vec![
+                    RegexAST::Group(vec![RegexAST::Char('c')]),
+                    RegexAST::Group(vec![RegexAST::Char('d')])
+                ])))])
             ))
         );
     }
@@ -459,12 +458,10 @@ mod tests {
             regex("[ab]*"),
             Ok((
                 "",
-                RegexAST::Group(vec![
-                    RegexAST::Star(Box::new(RegexAST::Class(vec![
-                        RegexAST::Char('a'),
-                        RegexAST::Char('b')
-                    ])))
-                ])
+                RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Class(vec![
+                    RegexAST::Char('a'),
+                    RegexAST::Char('b')
+                ])))])
             ))
         );
     }
@@ -475,12 +472,10 @@ mod tests {
             regex("(c|d)*"),
             Ok((
                 "",
-                RegexAST::Group(vec![
-                    RegexAST::Star(Box::new(RegexAST::Disjunction(vec![
-                        RegexAST::Group(vec![RegexAST::Char('c')]),
-                        RegexAST::Group(vec![RegexAST::Char('d')])
-                    ])))
-                ])
+                RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Disjunction(vec![
+                    RegexAST::Group(vec![RegexAST::Char('c')]),
+                    RegexAST::Group(vec![RegexAST::Char('d')])
+                ])))])
             ))
         );
     }
@@ -599,22 +594,20 @@ mod tests {
     fn test_multiple_rules() {
         debug_assert_eq!(
             parse_script("a -> b / c _ d\nb -> p / _ #"),
-            Ok(
-                vec![
-                    Statement::Rule(RewriteRule {
-                        left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                        right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                        source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                        target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                    }),
-                    Statement::Rule(RewriteRule {
-                        left: RegexAST::Epsilon,
-                        right: RegexAST::Group(vec![RegexAST::Boundary]),
-                        source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                        target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                    })
-                ]
-            )
+            Ok(vec![
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                }),
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Group(vec![RegexAST::Boundary]),
+                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                })
+            ])
         );
     }
 
@@ -622,22 +615,20 @@ mod tests {
     fn test_multiple_rules_alt_newline() {
         debug_assert_eq!(
             parse_script("a -> b / c _ d\r\nb -> p / _ #"),
-            Ok(
-                vec![
-                    Statement::Rule(RewriteRule {
-                        left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                        right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                        source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                        target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                    }),
-                    Statement::Rule(RewriteRule {
-                        left: RegexAST::Epsilon,
-                        right: RegexAST::Group(vec![RegexAST::Boundary]),
-                        source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                        target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                    })
-                ]
-            )
+            Ok(vec![
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                }),
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Group(vec![RegexAST::Boundary]),
+                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                })
+            ])
         );
     }
 
@@ -645,23 +636,21 @@ mod tests {
     fn test_rule_and_macro() {
         debug_assert_eq!(
             parse_script("::abc:: = (d|e)\na -> b / c _ d"),
-            Ok(
-                vec![
-                    Statement::MacroDef((
-                        "abc".to_string(),
-                        RegexAST::Group(vec![RegexAST::Disjunction(vec![
-                            RegexAST::Group(vec!(RegexAST::Char('d'))),
-                            RegexAST::Group(vec!(RegexAST::Char('e'))),
-                        ])])
-                    )),
-                    Statement::Rule(RewriteRule {
-                        left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                        right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                        source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                        target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                    })
-                ]
-            )
+            Ok(vec![
+                Statement::MacroDef((
+                    "abc".to_string(),
+                    RegexAST::Group(vec![RegexAST::Disjunction(vec![
+                        RegexAST::Group(vec!(RegexAST::Char('d'))),
+                        RegexAST::Group(vec!(RegexAST::Char('e'))),
+                    ])])
+                )),
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                })
+            ])
         );
     }
 }
