@@ -43,7 +43,7 @@ pub struct RewriteRule {
 type ParseError<'a> = Err<nom::error::Error<&'a str>>;
 
 fn character(input: &str) -> IResult<&str, RegexAST> {
-    let (input, c) = none_of(" />_()[]-|*+^#:%")(input)?;
+    let (input, c) = none_of(" />_()[]-|*+^#:%\\\n\r")(input)?;
     Ok((input, RegexAST::Char(c)))
 }
 
