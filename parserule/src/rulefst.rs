@@ -518,7 +518,17 @@ pub fn test_apply(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ruleparse::{rule, rule_no_env};
+    use crate::ruleparse::{parse_script, rule, rule_no_env};
+
+    #[test]
+    fn test_compile_script_basic() {
+        let symt = Arc::new(symt!["p", "b", "a", "i"]);
+        let script = parse_script("::voi::=b|a|i\np -> b / (::voi::) _ (::voi::)").unwrap();
+        println!("script={:?}", script);
+        let fst = compile_script(script).unwrap();
+        let result = test_apply(symt.clone(), fst, "apbppi".to_string());
+        assert_eq!(result, "abbppi".to_string());
+    }
 
     fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
