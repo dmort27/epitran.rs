@@ -16,9 +16,9 @@ use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
 use std::char;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::process::Command;
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
@@ -306,8 +306,6 @@ fn node_fst(
             let _ = fst2.set_start(q0);
             let q1: u32 = fst2.add_state();
             let _ = fst2.set_final(q1, 0.0);
-            let _ = fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1);
-            let _ = fst2.take_final_weight(q0);
             let _ = class.insert("#".to_string());
             let _ = class.insert("<eps>".to_string());
             symt.iter()
@@ -359,8 +357,7 @@ fn node_fst(
                 .unwrap_or_else(|e| println!("{e}: Could not concatenate wFSTs."));
         }
 
-        // Parses everything else as no change. This should never happen.
-        _ => (),
+        RegexAST::Comment => (),
     }
 
     let _ = rm_epsilon(&mut fst);
