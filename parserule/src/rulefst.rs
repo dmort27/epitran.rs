@@ -18,7 +18,7 @@ use rustfst::utils::{acceptor, transducer};
 use std::char;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::process::Command;
+// use std::process::Command;
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
@@ -300,6 +300,7 @@ fn node_fst(
             let _ = concat::concat(&mut fst, &fst2);
         }
 
+        // Interpret the complement of a character class (a set of characters none of which match the expression).
         RegexAST::ClassComplement(mut class) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst2.add_state();
@@ -347,6 +348,7 @@ fn node_fst(
                 .unwrap_or_else(|e| println!("{e}: Could not concatenate wFSTs."));
         }
 
+        // Interpret a macro
         RegexAST::Macro(macro_key) => {
             let macro_node = macros.get(&macro_key).unwrap_or_else(|| {
                 println!("Macro {macro_key} not defined!");
