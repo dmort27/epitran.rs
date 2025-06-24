@@ -125,9 +125,6 @@ fn rule_fst(
     let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right)?;
     let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
-    println!("--- left_fst={:#?}", left_fst);
-    println!("--- right_fst={:#?}", right_fst);
-
     let _ = concat(&mut fst, &left_fst);
     let _ = concat(&mut fst, &src_fst);
     let _ = concat(&mut fst, &tgt_fst);
@@ -585,7 +582,7 @@ mod tests {
     #[test]
     fn test_kleene_star1() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "cddda",
             "cdddb",
@@ -595,7 +592,7 @@ mod tests {
     #[test]
     fn test_kleene_star2() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ca",
             "cb",
@@ -605,7 +602,7 @@ mod tests {
     #[test]
     fn test_kleene_star3() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ddda",
             "ddda",
@@ -615,7 +612,7 @@ mod tests {
     #[test]
     fn test_kleene_plus3() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "cda",
             "cdb",
@@ -625,7 +622,7 @@ mod tests {
     #[test]
     fn test_kleene_plus4() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "ca",
             "ca",
@@ -635,7 +632,7 @@ mod tests {
     #[test]
     fn test_kleene_plus5() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdcda",
             "cdcdcdb",
@@ -645,7 +642,7 @@ mod tests {
     #[test]
     fn test_kleene_plus6() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdca",
             "cdcdca",
@@ -655,7 +652,7 @@ mod tests {
     #[test]
     fn test_option1() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd? _ ",
             "cda",
             "cdb",
@@ -665,7 +662,7 @@ mod tests {
     #[test]
     fn test_option2() {
         evaluate_rule(
-            Arc::new(symt!["a", "b", "c", "d"]),
+            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
             "a -> b / cd? _ ",
             "ca",
             "cb",
@@ -685,7 +682,7 @@ mod tests {
     #[test]
     fn test_simple_rule() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "a", "e"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule_no_env("a -> e").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
@@ -714,7 +711,7 @@ mod tests {
     #[test]
     fn test_multiple_application() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "a", "e"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule_no_env("a -> e").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
@@ -731,7 +728,7 @@ mod tests {
     #[test]
     fn test_rule_with_context() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "a", "b", "p"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule("p -> b / a _ a").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
@@ -748,7 +745,7 @@ mod tests {
     #[test]
     fn test_multiple_application_with_context() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "a", "b", "p"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule("p -> b / a _ a").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
@@ -764,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_rule_disjunction() {
-        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule("(p|b) -> i / a _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
@@ -777,7 +774,7 @@ mod tests {
 
     #[test]
     fn test_rule_class() {
-        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule("a -> i / [pb] _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
@@ -790,7 +787,7 @@ mod tests {
 
     #[test]
     fn test_rule_complement_class() {
-        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, rewrite_rule) = rule("a -> i / [^pb] _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
@@ -830,10 +827,10 @@ mod tests {
 
     #[test]
     fn test_node_fst() {
-        let symt = Arc::new(symt!["a", "b", "c", "d"]);
+        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]);
         let macros: HashMap<String, RegexAST> = HashMap::new();
         let input = RegexAST::Char('a');
-        let mut fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let mut fst: VectorFst<TropicalWeight> = fst![4 => 4; 0.0];
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert_eq!(node_fst(symt, &macros, input).unwrap(), fst);
