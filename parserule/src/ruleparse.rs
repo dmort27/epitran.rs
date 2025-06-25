@@ -356,7 +356,7 @@ fn macro_statement(input: &str) -> IResult<&str, (Statement, HashSet<String>)> {
     Ok((input, (Statement::MacroDef((name, re)), set)))
 }
 
-pub fn parse_script(input: &str) -> IResult<&str, (Vec<Statement>, HashSet<String>)> {
+pub fn parse_script(input: &str) -> Result<(Vec<Statement>, HashSet<String>), ParseError> {
     let mut parser = pair(
         separated_list0(
             many1(line_ending),
@@ -365,13 +365,13 @@ pub fn parse_script(input: &str) -> IResult<&str, (Vec<Statement>, HashSet<Strin
         many0(line_ending),
     );
 
-    let (input, (states_and_sets, _)) = parser.parse(input)?;
+    let (_, (states_and_sets, _)) = parser.parse(input)?;
     let mut set: HashSet<String> = HashSet::new();
     for (_, s) in states_and_sets.clone().iter() {
         set.extend(s.clone());
     }
     let statements: Vec<Statement> = states_and_sets.iter().map(|(t, _)| t.clone()).collect();
-    Ok((input, (statements, set)))
+    Ok((statements, set))
 }
 
 #[cfg(test)]
@@ -722,8 +722,6 @@ mod tests {
         debug_assert_eq!(
             parse_script("a -> b / c _ d\r\nb -> p / _ #"),
             Ok((
-                "",
-                (
                     vec![
                         Statement::Rule(RewriteRule {
                             left: RegexAST::Group(vec![RegexAST::Char('c')]),
@@ -739,7 +737,6 @@ mod tests {
                         })
                     ],
                     hashset_str!["c", "d", "a", "b", "b", "p"]
-                )
             ))
         );
     }
