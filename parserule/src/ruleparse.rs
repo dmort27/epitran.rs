@@ -379,7 +379,7 @@ mod tests {
 
     use super::*;
 
-macro_rules! hashset_str {
+    macro_rules! hashset_str {
     ($($val:expr),* $(,)?) => {{
         let mut set = std::collections::HashSet::new();
         $( set.insert(String::from($val)); )*
@@ -391,339 +391,359 @@ macro_rules! hashset_str {
     fn test_character() {
         assert_eq!(
             character("abc"),
-            Ok(("bc", (RegexAST::Char('a'), hashset_str!("a"))))
+            Ok(("bc", (RegexAST::Char('a'), hashset_str!["a"])))
+        );
+    }
+
+    #[test]
+    fn test_uni_esc() {
+        assert_eq!(
+            uni_esc(r#"\u014B"#),
+            Ok(("", (RegexAST::Char('ŋ'), hashset_str!["ŋ"])))
+        );
+    }
+
+    #[test]
+    fn test_class() {
+        assert_eq!(
+            class("[abc]"),
+            Ok((
+                "",
+                (
+                    RegexAST::Class(
+                        vec!["a", "b", "c"]
+                            .into_iter()
+                            .map(|s| s.to_string())
+                            .collect()
+                    ),
+                    hashset_str!["a", "b", "c"]
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn test_complement_class() {
+        assert_eq!(
+            complement_class("[^abc]"),
+            Ok((
+                "",
+                (
+                    RegexAST::ClassComplement(
+                        vec!["a", "b", "c"]
+                            .into_iter()
+                            .map(|s| s.to_string())
+                            .collect()
+                    ),
+                    hashset_str!["a", "b", "c"]
+                )
+            ))
+        )
+    }
+    /*
+
+           #[test]
+           fn test_sequence4() {
+               debug_assert_eq!(
+                   sequence("a"),
+                   Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+               );
+           }
+
+           #[test]
+           fn test_group3() {
+               debug_assert_eq!(
+                   group("(a)"),
+                   Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+               );
+           }
+
+           #[test]
+           fn test_group2() {
+               debug_assert_eq!(
+                   group("(a[def])"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![
+                           RegexAST::Char('a'),
+                           RegexAST::Class(
+                               vec!["d", "e", "f"]
+                                   .into_iter()
+                                   .map(|s| s.to_string())
+                                   .collect()
+                           )
+                       ])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_regex1() {
+               debug_assert_eq!(
+                   regex("a"),
+                   Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
+               );
+           }
+
+           #[test]
+           fn test_regex2() {
+               debug_assert_eq!(regex(""), Ok(("", RegexAST::Epsilon)));
+           }
+
+           #[test]
+           fn test_plus() {
+               debug_assert_eq!(
+                   plus("a+"),
+                   Ok(("", RegexAST::Plus(Box::new(RegexAST::Char('a')))))
+               )
+           }
+
+           #[test]
+           fn test_regex_with_plus1() {
+               debug_assert_eq!(
+                   regex("a+b"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![
+                           RegexAST::Plus(Box::new(RegexAST::Char('a'))),
+                           RegexAST::Char('b'),
+                       ])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_regex_with_plus_class() {
+               debug_assert_eq!(
+                   regex("[ab]+"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Class(
+                           vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
+                       )))])
+                   ))
+               )
+           }
+
+           #[test]
+           fn test_regex_with_plus_disjunction() {
+               debug_assert_eq!(
+                   regex("(c|d)+"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Disjunction(vec![
+                           RegexAST::Group(vec![RegexAST::Char('c')]),
+                           RegexAST::Group(vec![RegexAST::Char('d')])
+                       ])))])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_regex_with_star() {
+               debug_assert_eq!(
+                   regex("a*b"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![
+                           RegexAST::Star(Box::new(RegexAST::Char('a'))),
+                           RegexAST::Char('b'),
+                       ])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_regex_with_star_class() {
+               debug_assert_eq!(
+                   regex("[ab]*"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Class(
+                           vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
+                       )))])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_regex_with_star_disjunction() {
+               debug_assert_eq!(
+                   regex("(c|d)*"),
+                   Ok((
+                       "",
+                       RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Disjunction(vec![
+                           RegexAST::Group(vec![RegexAST::Char('c')]),
+                           RegexAST::Group(vec![RegexAST::Char('d')])
+                       ])))])
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_mac() {
+               debug_assert_eq!(
+                   mac("::macro::"),
+                   Ok(("", RegexAST::Macro("macro".to_string())))
+               );
+           }
+
+           #[test]
+           fn test_re_mac_def() {
+               debug_assert_eq!(
+                   re_mac_def("::abc:: = (d|e)"),
+                   Ok((
+                       "",
+                       (
+                           "abc".to_string(),
+                           RegexAST::Group(vec![RegexAST::Disjunction(vec![
+                               RegexAST::Group(vec!(RegexAST::Char('d'))),
+                               RegexAST::Group(vec!(RegexAST::Char('e'))),
+                           ])])
+                       )
+                   ))
+               );
+           }
+
+           #[test]
+           fn test_comment() {
+               debug_assert_eq!(comment("% Comment"), Ok(("", RegexAST::Comment,)))
+           }
+
+           #[test]
+           fn test_rule_no_env() {
+               debug_assert_eq!(
+                   rule_no_env("a -> b"),
+                   Ok((
+                       "",
+                       RewriteRule {
+                           left: RegexAST::Epsilon,
+                           right: RegexAST::Epsilon,
+                           source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                           target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                       }
+                   ))
+               );
+           }
+    */
+    #[test]
+    fn test_rule() {
+        debug_assert_eq!(
+            rule("a -> b / c _ d"),
+            Ok((
+                "",
+                (
+                    RewriteRule {
+                        left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                        right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                        source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                        target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    },
+                    hashset_str!["a", "b", "c", "d"]
+                )
+            ))
         );
     }
 
     /*
+    #[test]
+    fn test_rule2() {
+        debug_assert_eq!(
+            rule("b -> p / _ #"),
+            Ok((
+                "",
+                RewriteRule {
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Group(vec![RegexAST::Boundary]),
+                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                }
+            ))
+        )
+    }
 
-       #[test]
-       fn test_uni_esc() {
-           assert_eq!(uni_esc(r#"\u014B"#), Ok(("", RegexAST::Char('ŋ'))));
-       }
+    #[test]
+    fn test_rule3() {
+        debug_assert_eq!(
+            rule("0 -> 0 /  _ "),
+            Ok((
+                "",
+                RewriteRule {
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Epsilon,
+                    source: RegexAST::Group(vec![RegexAST::Epsilon]),
+                    target: RegexAST::Group(vec![RegexAST::Epsilon]),
+                }
+            ))
+        )
+    }
 
-       #[test]
-       fn test_class() {
-           assert_eq!(
-               class("[abc]"),
-               Ok((
-                   "",
-                   RegexAST::Class(
-                       vec!["a", "b", "c"]
-                           .into_iter()
-                           .map(|s| s.to_string())
-                           .collect()
-                   )
-               ))
-           );
-       }
+    #[test]
+    fn test_rule_with_comment() {
+        debug_assert_eq!(
+            rule_with_comment("a -> b / c _ d % Comment"),
+            Ok((
+                "",
+                RewriteRule {
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                }
+            ))
+        );
+    }
 
-       #[test]
-       fn test_complement_class() {
-           assert_eq!(
-               complement_class("[^abc]"),
-               Ok((
-                   "",
-                   RegexAST::ClassComplement(
-                       vec!["a", "b", "c"]
-                           .into_iter()
-                           .map(|s| s.to_string())
-                           .collect()
-                   )
-               ))
-           );
-       }
+    #[test]
+    fn test_multiple_rules() {
+        debug_assert_eq!(
+            parse_script("a -> b / c _ d\nb -> p / _ #"),
+            Ok(vec![
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                    right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                    source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                }),
+                Statement::Rule(RewriteRule {
+                    left: RegexAST::Epsilon,
+                    right: RegexAST::Group(vec![RegexAST::Boundary]),
+                    source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                })
+            ])
+        );
+    }
 
-       #[test]
-       fn test_sequence4() {
-           debug_assert_eq!(
-               sequence("a"),
-               Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
-           );
-       }
+    */
 
-       #[test]
-       fn test_group3() {
-           debug_assert_eq!(
-               group("(a)"),
-               Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
-           );
-       }
-
-       #[test]
-       fn test_group2() {
-           debug_assert_eq!(
-               group("(a[def])"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![
-                       RegexAST::Char('a'),
-                       RegexAST::Class(
-                           vec!["d", "e", "f"]
-                               .into_iter()
-                               .map(|s| s.to_string())
-                               .collect()
-                       )
-                   ])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_regex1() {
-           debug_assert_eq!(
-               regex("a"),
-               Ok(("", RegexAST::Group(vec![RegexAST::Char('a')])))
-           );
-       }
-
-       #[test]
-       fn test_regex2() {
-           debug_assert_eq!(regex(""), Ok(("", RegexAST::Epsilon)));
-       }
-
-       #[test]
-       fn test_plus() {
-           debug_assert_eq!(
-               plus("a+"),
-               Ok(("", RegexAST::Plus(Box::new(RegexAST::Char('a')))))
-           )
-       }
-
-       #[test]
-       fn test_regex_with_plus1() {
-           debug_assert_eq!(
-               regex("a+b"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![
-                       RegexAST::Plus(Box::new(RegexAST::Char('a'))),
-                       RegexAST::Char('b'),
-                   ])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_regex_with_plus_class() {
-           debug_assert_eq!(
-               regex("[ab]+"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Class(
-                       vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
-                   )))])
-               ))
-           )
-       }
-
-       #[test]
-       fn test_regex_with_plus_disjunction() {
-           debug_assert_eq!(
-               regex("(c|d)+"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![RegexAST::Plus(Box::new(RegexAST::Disjunction(vec![
-                       RegexAST::Group(vec![RegexAST::Char('c')]),
-                       RegexAST::Group(vec![RegexAST::Char('d')])
-                   ])))])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_regex_with_star() {
-           debug_assert_eq!(
-               regex("a*b"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![
-                       RegexAST::Star(Box::new(RegexAST::Char('a'))),
-                       RegexAST::Char('b'),
-                   ])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_regex_with_star_class() {
-           debug_assert_eq!(
-               regex("[ab]*"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Class(
-                       vec!["a", "b"].into_iter().map(|s| s.to_string()).collect()
-                   )))])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_regex_with_star_disjunction() {
-           debug_assert_eq!(
-               regex("(c|d)*"),
-               Ok((
-                   "",
-                   RegexAST::Group(vec![RegexAST::Star(Box::new(RegexAST::Disjunction(vec![
-                       RegexAST::Group(vec![RegexAST::Char('c')]),
-                       RegexAST::Group(vec![RegexAST::Char('d')])
-                   ])))])
-               ))
-           );
-       }
-
-       #[test]
-       fn test_mac() {
-           debug_assert_eq!(
-               mac("::macro::"),
-               Ok(("", RegexAST::Macro("macro".to_string())))
-           );
-       }
-
-       #[test]
-       fn test_re_mac_def() {
-           debug_assert_eq!(
-               re_mac_def("::abc:: = (d|e)"),
-               Ok((
-                   "",
-                   (
-                       "abc".to_string(),
-                       RegexAST::Group(vec![RegexAST::Disjunction(vec![
-                           RegexAST::Group(vec!(RegexAST::Char('d'))),
-                           RegexAST::Group(vec!(RegexAST::Char('e'))),
-                       ])])
-                   )
-               ))
-           );
-       }
-
-       #[test]
-       fn test_comment() {
-           debug_assert_eq!(comment("% Comment"), Ok(("", RegexAST::Comment,)))
-       }
-
-       #[test]
-       fn test_rule_no_env() {
-           debug_assert_eq!(
-               rule_no_env("a -> b"),
-               Ok((
-                   "",
-                   RewriteRule {
-                       left: RegexAST::Epsilon,
-                       right: RegexAST::Epsilon,
-                       source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                   }
-               ))
-           );
-       }
-
-       #[test]
-       fn test_rule() {
-           debug_assert_eq!(
-               rule("a -> b / c _ d"),
-               Ok((
-                   "",
-                   RewriteRule {
-                       left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                       right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                       source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                   }
-               ))
-           );
-       }
-
-       #[test]
-       fn test_rule2() {
-           debug_assert_eq!(
-               rule("b -> p / _ #"),
-               Ok((
-                   "",
-                   RewriteRule {
-                       left: RegexAST::Epsilon,
-                       right: RegexAST::Group(vec![RegexAST::Boundary]),
-                       source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                   }
-               ))
-           )
-       }
-
-       #[test]
-       fn test_rule3() {
-           debug_assert_eq!(
-               rule("0 -> 0 /  _ "),
-               Ok((
-                   "",
-                   RewriteRule {
-                       left: RegexAST::Epsilon,
-                       right: RegexAST::Epsilon,
-                       source: RegexAST::Group(vec![RegexAST::Epsilon]),
-                       target: RegexAST::Group(vec![RegexAST::Epsilon]),
-                   }
-               ))
-           )
-       }
-
-       #[test]
-       fn test_rule_with_comment() {
-           debug_assert_eq!(
-               rule_with_comment("a -> b / c _ d % Comment"),
-               Ok((
-                   "",
-                   RewriteRule {
-                       left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                       right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                       source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                   }
-               ))
-           );
-       }
-
-       #[test]
-       fn test_multiple_rules() {
-           debug_assert_eq!(
-               parse_script("a -> b / c _ d\nb -> p / _ #"),
-               Ok(vec![
-                   Statement::Rule(RewriteRule {
-                       left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                       right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                       source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                   }),
-                   Statement::Rule(RewriteRule {
-                       left: RegexAST::Epsilon,
-                       right: RegexAST::Group(vec![RegexAST::Boundary]),
-                       source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                   })
-               ])
-           );
-       }
-
-       #[test]
-       fn test_multiple_rules_alt_newline() {
-           debug_assert_eq!(
-               parse_script("a -> b / c _ d\r\nb -> p / _ #"),
-               Ok(vec![
-                   Statement::Rule(RewriteRule {
-                       left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                       right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                       source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                   }),
-                   Statement::Rule(RewriteRule {
-                       left: RegexAST::Epsilon,
-                       right: RegexAST::Group(vec![RegexAST::Boundary]),
-                       source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                       target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                   })
-               ])
-           );
-       }
-
+    #[test]
+    fn test_multiple_rules_alt_newline() {
+        debug_assert_eq!(
+            parse_script("a -> b / c _ d\r\nb -> p / _ #"),
+            Ok((
+                "",
+                (
+                    vec![
+                        Statement::Rule(RewriteRule {
+                            left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                            right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                            source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                            target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                        }),
+                        Statement::Rule(RewriteRule {
+                            left: RegexAST::Epsilon,
+                            right: RegexAST::Group(vec![RegexAST::Boundary]),
+                            source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                            target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                        })
+                    ],
+                    hashset_str!["c", "d", "a", "b", "b", "p"]
+                )
+            ))
+        );
+    }
+    /*
        #[test]
        fn test_rule_and_macro() {
            debug_assert_eq!(
