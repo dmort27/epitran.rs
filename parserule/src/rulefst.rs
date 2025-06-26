@@ -557,11 +557,10 @@ mod tests {
         inner_symt.add_symbols(syms);
         let symt = Arc::new(inner_symt);
         println!("script={:?}", script);
-        let fst = compile_script(symt.clone(), script)
-            .unwrap_or_else(|e| {
-                println!("{e}: Could not compile script.");
-                VectorFst::<TropicalWeight>::new()
-            });
+        let fst = compile_script(symt.clone(), script).unwrap_or_else(|e| {
+            println!("{e}: Could not compile script.");
+            VectorFst::<TropicalWeight>::new()
+        });
         let result = test_apply(symt.clone(), fst, "#ni1hao3#".to_string());
         assert_eq!(result, "#ni{14}hao{4}#".to_string());
     }

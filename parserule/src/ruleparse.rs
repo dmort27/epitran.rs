@@ -1,5 +1,7 @@
 use std::{collections::HashSet, hash::Hash};
 
+use anyhow::Result;
+
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -356,7 +358,9 @@ fn macro_statement(input: &str) -> IResult<&str, (Statement, HashSet<String>)> {
     Ok((input, (Statement::MacroDef((name, re)), set)))
 }
 
-pub fn parse_script(input: &str) -> Result<(Vec<Statement>, HashSet<String>), ParseError> {
+pub fn parse_script<'a>(
+    input: &'a str,
+) -> Result<(Vec<Statement>, HashSet<String>), ParseError<'a>> {
     let mut parser = pair(
         separated_list0(
             many1(line_ending),
@@ -722,21 +726,21 @@ mod tests {
         debug_assert_eq!(
             parse_script("a -> b / c _ d\r\nb -> p / _ #"),
             Ok((
-                    vec![
-                        Statement::Rule(RewriteRule {
-                            left: RegexAST::Group(vec![RegexAST::Char('c')]),
-                            right: RegexAST::Group(vec![RegexAST::Char('d')]),
-                            source: RegexAST::Group(vec![RegexAST::Char('a')]),
-                            target: RegexAST::Group(vec![RegexAST::Char('b')]),
-                        }),
-                        Statement::Rule(RewriteRule {
-                            left: RegexAST::Epsilon,
-                            right: RegexAST::Group(vec![RegexAST::Boundary]),
-                            source: RegexAST::Group(vec![RegexAST::Char('b')]),
-                            target: RegexAST::Group(vec![RegexAST::Char('p')]),
-                        })
-                    ],
-                    hashset_str!["c", "d", "a", "b", "b", "p"]
+                vec![
+                    Statement::Rule(RewriteRule {
+                        left: RegexAST::Group(vec![RegexAST::Char('c')]),
+                        right: RegexAST::Group(vec![RegexAST::Char('d')]),
+                        source: RegexAST::Group(vec![RegexAST::Char('a')]),
+                        target: RegexAST::Group(vec![RegexAST::Char('b')]),
+                    }),
+                    Statement::Rule(RewriteRule {
+                        left: RegexAST::Epsilon,
+                        right: RegexAST::Group(vec![RegexAST::Boundary]),
+                        source: RegexAST::Group(vec![RegexAST::Char('b')]),
+                        target: RegexAST::Group(vec![RegexAST::Char('p')]),
+                    })
+                ],
+                hashset_str!["c", "d", "a", "b", "b", "p"]
             ))
         );
     }
