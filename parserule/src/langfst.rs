@@ -1,31 +1,22 @@
-//use std::error::Error;
 use std::collections::HashSet;
-use std::process::Command;
 use std::sync::Arc;
 
 use rustfst::fst_impls::VectorFst;
-use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
-//use rustfst::prelude::determinize::{determinize, determinize_with_config, DeterminizeConfig};
+use rustfst::fst_traits::MutableFst;
 use rustfst::algorithms::{
     add_super_final_state,
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
-    minimize, minimize_with_config, MinimizeConfig, push_weights,
+    minimize_with_config, MinimizeConfig, push_weights,
     rm_epsilon::rm_epsilon,
     tr_sort, ReweightType,
 };
 use rustfst::prelude::*;
 use rustfst::prelude::{
-    closure::{closure, ClosureType},
     compose::compose,
     union::union,
 };
-use rustfst::utils::{acceptor, transducer};
-//use rustfst::prelude::{TropicalWeight, VectorFst};
-
-// use anyhow::Result;
-
 use crate::mapparse::{process_map, ParsedMapping};
-use crate::rulefst::{apply_fst, compile_script};
+use crate::rulefst::compile_script;
 use crate::ruleparse::parse_script;
 
 /// Build a wFST for a language using the preprocessing and postprocessing
@@ -84,7 +75,7 @@ fn compile_mapping_fst(
     mapping: Vec<ParsedMapping>,
 ) -> Result<VectorFst<TropicalWeight>, Box<dyn std::error::Error>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
-    let mut q0 = fst.add_state();
+    let q0 = fst.add_state();
     let _ = fst.set_start(q0);
     let _ = fst.set_final(q0, 1.0);
     fst.set_input_symbols(symt.clone());
@@ -92,7 +83,7 @@ fn compile_mapping_fst(
     mapping.iter().for_each(|m| {
         let mut transducer_fst: VectorFst<TropicalWeight> = VectorFst::new();
         let mut last = transducer_fst.add_state();
-        transducer_fst.set_start(last);
+        let _ = transducer_fst.set_start(last);
         m.orth.iter().zip(m.phon.iter()).for_each(|(i, o)| {
             let next = transducer_fst.add_state();
             let ilabel = symt.get_label(i).unwrap_or_else(|| {
@@ -136,38 +127,38 @@ fn compile_mapping_fst(
 
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    let _ = fst.draw(
-        "map_fst.dot",
-        &DrawingConfig {
-            vertical: false,
-            size: (Some((10.0, 10.0))),
-            title: ("Mapping FST".to_string()),
-            portrait: (true),
-            ranksep: (None),
-            nodesep: (None),
-            fontsize: (12),
-            acceptor: (false),
-            show_weight_one: (true),
-            print_weight: (true),
-        },
-    );
-    Command::new("dot")
-        .args(["-Tpdf", "-o map_fst.pdf", "map_fst.dot"])
-        .spawn()
-        .expect("Could not run dot on dot file \"map_fst.dot\".");
-
-    Command::new("open")
-        .arg("map_fst.pdf")
-        .spawn()
-        .expect("Could not open \"map_fst.pdf\".");
+    
+    // Optional FST visualization - only if debug mode and external tools available
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(_) = fst.draw(
+            "map_fst.dot",
+            &DrawingConfig {
+                vertical: false,
+                size: (Some((10.0, 10.0))),
+                title: ("Mapping FST".to_string()),
+                portrait: (true),
+                ranksep: (None),
+                nodesep: (None),
+                fontsize: (12),
+                acceptor: (false),
+                show_weight_one: (true),
+                print_weight: (true),
+            },
+        ) {
+            // Only attempt to run dot if the file was created successfully
+            // This is optional and won't fail the function if dot is not available
+            let _ = std::process::Command::new("dot")
+                .args(["-Tpdf", "-o", "map_fst.pdf", "map_fst.dot"])
+                .output(); // Use output() instead of spawn() to avoid panics
+        }
+    }
 
     Ok(fst)
 }
 
 #[cfg(test)]
 mod test {
-    use rustfst::prelude::rm_epsilon::rm_epsilon;
-
     use crate::{langfst::build_lang_fst, rulefst::apply_fst};
 
     #[test]
@@ -175,7 +166,7 @@ mod test {
         let pre_str = "a -> b / c_d";
         let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d";
         let post_str = "c -> d / _d";
-        let (symt, mut fst) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
+        let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
         let input = "acad";
         assert_eq!(apply_fst(symt, fst, input.to_string()), "acdd".to_string())
     }

@@ -1,13 +1,7 @@
 use csv::Reader;
 use serde::Deserialize;
 use std::error::Error;
-
 use std::collections::HashSet;
-
-use rustfst::fst_impls::VectorFst;
-use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
-use rustfst::prelude::*;
-use rustfst::utils::{acceptor, transducer};
 
 use crate::graphemeparse::get_graphemes;
 
@@ -42,10 +36,7 @@ pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), 
         let target_len = orth.len().max(phon.len());
         orth.resize(target_len, "".to_string());
         phon.resize(target_len, "".to_string());
-        let parsed_mapping = ParsedMapping {
-            orth: orth,
-            phon: phon,
-        };
+        let parsed_mapping = ParsedMapping { orth, phon };
         parsed_rules.push(parsed_mapping);
     }
     Ok((syms, parsed_rules))
@@ -78,9 +69,10 @@ mod tests {
         assert_eq!(process_map(data).unwrap(), (syms, mapping));
     }
 
+    #[test]
     fn test_process_data_with_uni_esc() {
         let data = "orth,phon\na,a\nb,b\nab,\\u0250\n";
-        let syms = HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()]);
+        let syms = HashSet::from(["a".to_string(), "b".to_string(), "ɐ".to_string()]);
         let mapping = vec![
             ParsedMapping {
                 orth: vec!["a".to_string()],

@@ -5,7 +5,7 @@ use nom::{
     combinator::{map_res, recognize},
     multi::{many0, many1},
     sequence::preceded,
-    Err, IResult, Parser,
+    IResult, Parser,
 };
 
 pub fn get_graphemes(input: &str) -> Vec<String> {
@@ -40,6 +40,7 @@ mod tests {
     fn test_get_graphemes() {
         assert_eq!(get_graphemes("abc"), vec!["a", "b", "c"]);
     }
+    #[test]
     fn test_get_graphemes_with_uni_esc() {
         assert_eq!(get_graphemes("k\\u0250t"), vec!["k", "ɐ", "t"]);
     }

@@ -7,7 +7,7 @@ use anyhow::Result;
 use rustfst::algorithms::compose::compose;
 use rustfst::algorithms::{
     add_super_final_state, closure::closure, concat::concat, minimize_with_config, MinimizeConfig, push_weights,
-    rm_epsilon::rm_epsilon, top_sort, tr_sort, union::union, ReweightType,
+    rm_epsilon::rm_epsilon, tr_sort, union::union, ReweightType,
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
 };
 use rustfst::fst_impls::VectorFst;
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn test_compile_script_basic_with_comment() {
         let symt = Arc::new(symt!["p", "b", "a", "i"]);
-        let (script, syms) = parse_script(
+        let (script, _syms) = parse_script(
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
         .unwrap();
@@ -609,7 +609,7 @@ mod tests {
 
     fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule(rule_str).unwrap();
+        let (_, (rewrite_rule, _syms)) = rule(rule_str).unwrap();
         let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule).unwrap();
         assert_eq!(
             apply_fst(symt.clone(), fst, input.to_string()),
@@ -722,7 +722,7 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule_no_env("a -> e").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule_no_env("a -> e").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -751,7 +751,7 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule_no_env("a -> e").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule_no_env("a -> e").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -765,7 +765,7 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule("p -> b / a _ a").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule("p -> b / a _ a").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -782,7 +782,7 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule("p -> b / a _ a").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule("p -> b / a _ a").unwrap();
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -798,7 +798,7 @@ mod tests {
     fn test_rule_disjunction() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule("(p|b) -> i / a _ ").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule("(p|b) -> i / a _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
@@ -811,7 +811,7 @@ mod tests {
     fn test_rule_class() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule("a -> i / [pb] _ ").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule("a -> i / [pb] _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
@@ -824,7 +824,7 @@ mod tests {
     fn test_rule_complement_class() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, syms)) = rule("a -> i / [^pb] _ ").unwrap();
+        let (_, (rewrite_rule, _syms)) = rule("a -> i / [^pb] _ ").unwrap();
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
