@@ -1,6 +1,7 @@
 // use anyhow::Result;
 use rustfst::prelude::*;
-
+// Explicitly import VectorFst to avoid conflicts
+use rustfst::fst_impls::VectorFst;
 use std::collections::HashMap;
 // use string_join::Join;
 
@@ -297,8 +298,9 @@ impl M2MFstAligner {
 #[cfg(test)]
 mod tests {
    use super::*;
-   use rustfst::prelude::*;
-   use std::collections::HashMap;
+   // No need to re-import these as they're already imported in the parent module
+   // use rustfst::prelude::*;
+   // use std::collections::HashMap;
 
 
    #[test]

@@ -10,6 +10,7 @@ use rustfst::algorithms::{
     rm_epsilon::rm_epsilon, tr_sort, union::union, ReweightType,
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
 };
+// Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
 use rustfst::prelude::*;
@@ -17,8 +18,10 @@ use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
 use std::char;
 use std::cmp::Ordering;
+// Explicitly import HashMap to avoid conflicts
 use std::collections::HashMap;
 // use std::process::Command;
+// Explicitly import Arc to avoid conflicts
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
@@ -458,6 +461,7 @@ pub fn string_to_linear_automaton(symt: Arc<SymbolTable>, s: &str) -> VectorFst<
 /// ```
 /// # use std::sync::Arc;
 /// # use rustfst::prelude::*;
+/// # use rustfst::fst_impls::VectorFst;
 /// # use rustfst::utils::transducer;
 /// # use parserule::rulefst::{apply_fst_to_string};
 /// let symt = Arc::new(symt!["a", "b", "c", "d"]);
@@ -497,6 +501,7 @@ pub fn apply_fst_to_string(
 /// # use parserule::rulefst::{decode_paths_through_fst};
 /// # use rustfst::fst_impls::VectorFst;
 /// # use rustfst::prelude::*;
+/// # use std::collections::HashMap;
 /// # use rustfst::utils::{acceptor, transducer};
 /// let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "d"]);
 /// let mut fst: VectorFst<TropicalWeight> = fst![1, 2, 1 => 3, 4, 3; 0.1];
@@ -546,6 +551,7 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 /// # use parserule::rulefst::apply_fst;
 /// # use rustfst::fst_impls::VectorFst;
 /// # use rustfst::prelude::*;
+/// # use std::collections::HashMap;
 /// # use rustfst::utils::{acceptor, transducer};
 /// let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "d"]);
 /// let mut fst: VectorFst<TropicalWeight> = fst![1, 2, 1 => 3, 4, 3; 0.1];
