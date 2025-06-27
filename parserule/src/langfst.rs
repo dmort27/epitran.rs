@@ -62,7 +62,9 @@ pub fn build_lang_fst<'a>(
     tr_sort(&mut postproc_fst, ILabelCompare {});
     let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
 
-    rm_epsilon(&mut composed_fst).unwrap();
+    rm_epsilon(&mut composed_fst).unwrap_or_else(|e| {
+        eprintln!("Warning: Could not remove epsilon transitions from composed FST: {}", e);
+    });
     top_sort(&mut composed_fst)
         .unwrap_or_else(|e| println!("{e}: Could not sort topologically. There is cycle"));
     // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
@@ -114,7 +116,9 @@ fn compile_mapping_fst(
     //         let _ = fst.emplace_tr(q0, l, l, 1.0, q0);
     //     }
     // });
-    rm_epsilon(&mut fst).unwrap();
+    rm_epsilon(&mut fst).unwrap_or_else(|e| {
+        eprintln!("Warning: Could not remove epsilon transitions from mapping FST: {}", e);
+    });
     let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
         &fst,
         DeterminizeConfig {
@@ -166,7 +170,8 @@ mod test {
         let pre_str = "a -> b / c_d";
         let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d";
         let post_str = "c -> d / _d";
-        let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
+        let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
+            .expect("Failed to build language FST in test");
         let input = "acad";
         assert_eq!(apply_fst(symt, fst, input.to_string()), "acdd".to_string())
     }

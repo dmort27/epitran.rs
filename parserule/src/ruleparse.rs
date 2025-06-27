@@ -61,7 +61,10 @@ fn uni_esc(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
         |out: &str| u32::from_str_radix(out, 16),
     );
     let (input, num) = parser.parse(input)?;
-    let c = std::char::from_u32(num).unwrap();
+    let c = std::char::from_u32(num).unwrap_or_else(|| {
+        eprintln!("Warning: Invalid Unicode code point {} in rule, using replacement character", num);
+        '\u{FFFD}' // Unicode replacement character
+    });
     let syms: HashSet<String> = HashSet::from([c.to_string()]);
     Ok((input, (RegexAST::Char(c), syms)))
 }
