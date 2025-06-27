@@ -1,7 +1,27 @@
-use rsepitran::{tokenize_by_whitespace, filter_by_symbols};
+use rsepitran::{tokenize_by_whitespace, filter_by_symbols, Epitran};
 use std::collections::HashSet;
 
 fn main() {
+    // Test the Epitran functionality
+    println!("=== Testing Epitran functionality ===");
+    let epitran = Epitran::new();
+    
+    println!("Available languages: {:?}", epitran.available_languages());
+    
+    // Test transliteration with available languages
+    for &lang in epitran.available_languages().iter().take(3) {
+        println!("\nTesting language: {}", lang);
+        
+        let test_words = ["hello", "world", "test"];
+        for word in &test_words {
+            match epitran.transliterate_simple(lang, word) {
+                Ok(result) => println!("  {} -> {}", word, result),
+                Err(e) => println!("  Error transliterating '{}': {}", word, e),
+            }
+        }
+    }
+    
+    println!("\n=== Testing tokenization functionality ===");
     // Test the tokenize_by_whitespace function
     let test_text = "Hello, world! This is a test. How are you?";
     let tokens = tokenize_by_whitespace(test_text, "#");
