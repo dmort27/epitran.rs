@@ -41,17 +41,17 @@ enum Action {
 // }
 
 /// Return a symbol table based on a specified unicode range (our Σ).
-pub fn unicode_symbol_table() -> Arc<SymbolTable> {
+pub fn unicode_symbol_table() -> Result<Arc<SymbolTable>> {
     let mut symt = SymbolTable::new();
     symt.add_symbol("#");
-    (1..0xFFFF)
-        .map(char::from_u32)
-        .flatten()
-        .filter(|&c| c != '#')
-        .for_each(|i| {
-            let _ = symt.add_symbol(i);
-        });
-    Arc::new(symt)
+    for code_point in 1..0xFFFF {
+        if let Some(c) = char::from_u32(code_point) {
+            if c != '#' {
+                symt.add_symbol(c);
+            }
+        }
+    }
+    Ok(Arc::new(symt))
 }
 
 /// Compile an Epitran script as a WFST.
@@ -143,24 +143,24 @@ fn rule_fst(
     let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right)?;
     let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
-    let _ = concat(&mut fst, &left_fst);
-    let _ = concat(&mut fst, &src_fst);
-    let _ = concat(&mut fst, &tgt_fst);
-    let _ = concat(&mut fst, &right_fst);
-    let _ = concat(&mut fst, &univ_acc);
+    concat(&mut fst, &left_fst)?;
+    concat(&mut fst, &src_fst)?;
+    concat(&mut fst, &tgt_fst)?;
+    concat(&mut fst, &right_fst)?;
+    concat(&mut fst, &univ_acc)?;
 
     let first_state: u32 = 0;
     let last_state: u32 = (fst.num_states() - 1) as u32;
 
-    let _ = fst.emplace_tr(last_state, 0, 0, 0.0, first_state);
-    let _ = fst.emplace_tr(first_state, 0, 0, 10.0, last_state);
-    let _ = fst.set_final(last_state, 0.0);
+    fst.emplace_tr(last_state, 0, 0, 0.0, first_state)?;
+    fst.emplace_tr(first_state, 0, 0, 10.0, last_state)?;
+    fst.set_final(last_state, 0.0)?;
 
     let mut root: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
-    let _ = concat(&mut root, &fst);
+    concat(&mut root, &fst)?;
 
-    let _ = root.set_start(0);
+    root.set_start(0)?;
 
     // let _ = root.draw(
     //     "root_fst.dot",
@@ -261,7 +261,7 @@ fn node_fst(
         RegexAST::Group(nodes) => {
             for node2 in nodes {
                 let fst2 = node_fst(symt.clone(), macros, node2)?;
-                let _ = concat(&mut fst, &fst2);
+                concat(&mut fst, &fst2)?;
             }
         }
 
@@ -269,7 +269,7 @@ fn node_fst(
         RegexAST::Boundary => {
             let bnd_label = symt.get_label("#").unwrap_or(1);
             let fst2: VectorFst<TropicalWeight> = fst![bnd_label];
-            let _ = concat(&mut fst, &fst2);
+            concat(&mut fst, &fst2)?;
         }
 
         // Interpret a character.
@@ -284,73 +284,61 @@ fn node_fst(
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst.add_state();
             let q1 = fst.add_state();
-            let _ = fst.emplace_tr(q0, 0, 0, TropicalWeight::zero(), q1);
+            fst.emplace_tr(q0, 0, 0, TropicalWeight::zero(), q1)?;
             for node in nodes {
                 let case_fst = node_fst(symt.clone(), macros, node)?;
-                let _ = union(&mut fst2, &case_fst);
+                union(&mut fst2, &case_fst)?;
             }
-            let _ = concat(&mut fst, &fst2);
+            concat(&mut fst, &fst2)?;
         }
 
         // Interpret a character class (a set of characters any of which match the expression).
         RegexAST::Class(class) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst2.add_state();
-            let _ = fst2.set_start(q0);
+            fst2.set_start(q0)?;
             let q1: u32 = fst2.add_state();
-            let _ = fst2.set_final(q1, 0.0);
-            let _ = fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1);
-            class
-                .iter()
-                .map(|s| {
-                    symt.get_label(s).unwrap_or_else(|| {
-                        println!("Symbol {s} is not in symbol table.");
-                        0
-                    })
-                })
-                .for_each(|l| {
-                    fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)
-                        .unwrap_or_else(|e| {
-                            eprintln!("Warning: Could not add transition to FST: {}", e);
-                        });
+            fst2.set_final(q1, 0.0)?;
+            fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1)?;
+            for s in class.iter() {
+                let l = symt.get_label(s).unwrap_or_else(|| {
+                    eprintln!("Warning: Symbol '{}' is not in symbol table, using epsilon", s);
+                    0
                 });
-            let _ = concat::concat(&mut fst, &fst2);
+                fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)?;
+            }
+            concat::concat(&mut fst, &fst2)?;
         }
 
         // Interpret the complement of a character class (a set of characters none of which match the expression).
         RegexAST::ClassComplement(mut class) => {
             let mut fst2: VectorFst<TropicalWeight> = VectorFst::<TropicalWeight>::new();
             let q0 = fst2.add_state();
-            let _ = fst2.set_start(q0);
+            fst2.set_start(q0)?;
             let q1: u32 = fst2.add_state();
-            let _ = fst2.set_final(q1, 0.0);
-            let _ = class.insert("#".to_string());
-            let _ = class.insert("<eps>".to_string());
-            symt.iter()
-                .filter(|(_, s)| !class.contains(*s))
-                .for_each(|(l, _)| {
-                    fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)
-                        .unwrap_or_else(|e| {
-                            eprintln!("Warning: Could not add complement transition to FST: {}", e);
-                        });
-                });
-            let _ = concat::concat(&mut fst, &fst2);
+            fst2.set_final(q1, 0.0)?;
+            class.insert("#".to_string());
+            class.insert("<eps>".to_string());
+            for (l, s) in symt.iter() {
+                if !class.contains(s) {
+                    fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)?;
+                }
+            }
+            concat::concat(&mut fst, &fst2)?;
         }
 
         // Interpret a Kleene star.
         RegexAST::Star(node) => {
             let mut fst2 = node_fst(symt, macros, *node)?;
             closure(&mut fst2, closure::ClosureType::ClosureStar);
-            concat(&mut fst, &fst2)
-                .unwrap_or_else(|e| println!("{e}: Couldn't concatenate wFSTs."));
+            concat(&mut fst, &fst2)?;
         }
 
         // Interpret a Kleene plus.
         RegexAST::Plus(node) => {
             let mut fst2 = node_fst(symt, macros, *node)?;
             closure(&mut fst2, closure::ClosureType::ClosurePlus);
-            concat(&mut fst, &fst2)
-                .unwrap_or_else(|e| println!("{e}: Couldn't concatenate wFSTs."));
+            concat(&mut fst, &fst2)?;
         }
 
         // Interpret an optional node
@@ -381,7 +369,9 @@ fn node_fst(
         RegexAST::Comment => (),
     }
 
-    let _ = rm_epsilon(&mut fst);
+    rm_epsilon(&mut fst).unwrap_or_else(|e| {
+        eprintln!("Warning: Could not remove epsilon transitions: {}", e);
+    });
     let mut fst = determinize_with_config(
         &fst,
         DeterminizeConfig { 
@@ -522,14 +512,13 @@ pub fn decode_paths_through_fst(
     let symt: Arc<SymbolTable> = symt.clone();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    let paths: Vec<_> = fst
-        .string_paths_iter()
-        .inspect_err(|e| println!("{e}: error iterating over paths."))
-        .unwrap_or_else(|e| {
+    let paths: Vec<_> = match fst.string_paths_iter() {
+        Ok(iter) => iter.collect(),
+        Err(e) => {
             eprintln!("Error: Could not iterate over FST paths: {}", e);
-            Vec::new().into_iter()
-        })
-        .collect();
+            Vec::new()
+        }
+    };
     let mut outputs: Vec<(TropicalWeight, String)> = paths
         .iter()
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
@@ -846,12 +835,12 @@ mod tests {
     fn test_concat() {
         let mut fst1 = VectorFst::<TropicalWeight>::new();
         let q0 = fst1.add_state();
-        let _ = fst1.set_start(q0);
+        fst1.set_start(q0).expect("Failed to set start state in test");
         let q1 = fst1.add_state();
-        let _ = fst1.set_final(q1, 0.0);
-        let _ = fst1.emplace_tr(q0, 0, 0, 0.0, q1);
+        fst1.set_final(q1, 0.0).expect("Failed to set final state in test");
+        fst1.emplace_tr(q0, 0, 0, 0.0, q1).expect("Failed to add transition in test");
         let fst2: VectorFst<TropicalWeight> = fst![1 => 2; 0.0];
-        let _ = concat(&mut fst1, &fst2);
+        concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
         assert_eq!(fst1, fst![0, 0, 1 => 0, 0, 2; 0.0])
     }
 
@@ -859,13 +848,13 @@ mod tests {
     fn test_rm_epsilon() {
         let mut fst1 = VectorFst::<TropicalWeight>::new();
         let q0 = fst1.add_state();
-        let _ = fst1.set_start(q0);
+        fst1.set_start(q0).expect("Failed to set start state in test");
         let q1 = fst1.add_state();
-        let _ = fst1.set_final(q1, 0.0);
-        let _ = fst1.emplace_tr(q0, 0, 0, 0.0, q1);
+        fst1.set_final(q1, 0.0).expect("Failed to set final state in test");
+        fst1.emplace_tr(q0, 0, 0, 0.0, q1).expect("Failed to add transition in test");
         let fst2: VectorFst<TropicalWeight> = fst![1, 3 => 2, 4; 0.0];
-        let _ = concat(&mut fst1, &fst2);
-        let _ = rm_epsilon(&mut fst1);
+        concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
+        rm_epsilon(&mut fst1).expect("Failed to remove epsilon transitions in test");
         assert_eq!(fst1, fst![1, 3 => 2, 4; 0.0])
     }
 

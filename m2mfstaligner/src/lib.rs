@@ -57,16 +57,17 @@ impl M2MFstAligner {
       }
    }
 
-   fn seqs2fsts(&mut self, data: &Vec<(Vec<String>, Vec<String>)>) {
+   fn seqs2fsts(&mut self, data: &Vec<(Vec<String>, Vec<String>)>) -> Result<(), Box<dyn std::error::Error>> {
       // TODO: given a list of grapheme-phoneme pairs, convert each one into a FST
       for pair in data {
          let (grapheme_seq, phoneme_seq) = &pair;
          let mut fst = VectorFst::<LogWeight>::new();
-         self.seq2fst(&mut fst, &grapheme_seq, &phoneme_seq);
+         self.seq2fst(&mut fst, &grapheme_seq, &phoneme_seq)?;
          self.lattices.push(fst);
       }
 
-      self.initialize(self.partial_counts.len() as f32);
+      self.initialize(self.partial_counts.len() as f32)?;
+      Ok(())
    }
 
    fn seq2fst(
@@ -74,7 +75,7 @@ impl M2MFstAligner {
       fst: &mut VectorFst<LogWeight>, 
       grapheme_seq: &Vec<String>, 
       phoneme_seq: &Vec<String>
-   ) {   
+   ) -> Result<(), Box<dyn std::error::Error>> {   
       let mut istate;
       let mut ostate;
       for i in 0..(grapheme_seq.len() + 1) {
@@ -129,7 +130,7 @@ impl M2MFstAligner {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
                      // symbtbl[0] is epsilon
-                     fst.add_tr(istate as u32, Tr::new(ilabel, 0, 1.0, ostate as u32)).unwrap();
+                     fst.add_tr(istate as u32, Tr::new(ilabel, 0, 1.0, ostate as u32))?;
                   }
                }
             }
@@ -146,7 +147,10 @@ impl M2MFstAligner {
                         gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                         let g_symb = gseq.join("");
                         let ilabel = if self.symbtbl.contains_symbol(&g_symb) {
-                                       self.symbtbl.get_label(&g_symb).unwrap()
+                                       self.symbtbl.get_label(&g_symb).unwrap_or_else(|| {
+                                           eprintln!("Warning: Symbol '{}' not found in symbol table, using epsilon", g_symb);
+                                           0 // epsilon
+                                       })
                                     } else {
                                        self.symbtbl.add_symbol(g_symb)
                                     };
@@ -155,7 +159,10 @@ impl M2MFstAligner {
                         pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                         let p_symb = pseq.join("");
                         let olabel = if self.symbtbl.contains_symbol(&p_symb) {
-                                       self.symbtbl.get_label(&p_symb).unwrap()
+                                       self.symbtbl.get_label(&p_symb).unwrap_or_else(|| {
+                                           eprintln!("Warning: Symbol '{}' not found in symbol table, using epsilon", p_symb);
+                                           0 // epsilon
+                                       })
                                     } else {
                                        self.symbtbl.add_symbol(p_symb)
                                     };
@@ -164,7 +171,7 @@ impl M2MFstAligner {
                         if ostate + 1 > fst.num_states() {
                            fst.add_states(ostate - fst.num_states() + 1);
                         }
-                        fst.add_tr(istate as u32, Tr::new(ilabel, olabel, 1.0, ostate as u32)).unwrap();
+                        fst.add_tr(istate as u32, Tr::new(ilabel, olabel, 1.0, ostate as u32))?;
                      }
                   }
                }
@@ -172,91 +179,95 @@ impl M2MFstAligner {
          }
       }
    
-      fst.set_start(0).unwrap();
-      fst.set_final(((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1) as u32, LogWeight::one()).unwrap();
+      fst.set_start(0)?;
+      fst.set_final(((grapheme_seq.len() + 1) * (phoneme_seq.len() + 1) - 1) as u32, LogWeight::one())?;
    
       // Removes all states/transitions not connected to the final state
-      connect(fst).unwrap();
+      connect(fst)?;
       // And add the remaining transitions into partial_counts
       for state_id in fst.states_iter() {
-         let trs = fst.tr_iter_mut(state_id).unwrap();
+         let trs = fst.tr_iter_mut(state_id)?;
          for i in 0..trs.len() {
-            let tr = trs.get(i).unwrap();
+            let tr = trs.get(i).ok_or("Failed to get transition")?;
             if !self.partial_counts.contains_key(&GPAlign(tr.ilabel, tr.olabel)) {
                self.partial_counts.insert(GPAlign(tr.ilabel, tr.olabel), LogWeight::zero());
             }
          }
       }
+      Ok(())
    }
 
-   fn initialize(&mut self, num_unique_edges: f32) {
+   fn initialize(&mut self, num_unique_edges: f32) -> Result<(), Box<dyn std::error::Error>> {
       let weight = 1.0 / num_unique_edges;
       for lattice in self.lattices.iter_mut() {
          for state_id in lattice.states_iter() {
-            let mut trs = lattice.tr_iter_mut(state_id).unwrap();
+            let mut trs = lattice.tr_iter_mut(state_id)?;
             for i in 0..trs.len() {
-               trs.set_weight(i, LogWeight::from(weight)).unwrap();
+               trs.set_weight(i, LogWeight::from(weight))?;
             }
          }
       }
+      Ok(())
    }
 
-   fn expectation(&mut self) { // return necessary?
+   fn expectation(&mut self) -> Result<(), Box<dyn std::error::Error>> {
       // For all training alignment WFSTs in 1.
       for lattice in self.lattices.iter_mut() {
-         // Rather than using .unwrap in these cases, we should probably handle
-         // the potential errors properly using matching or if let.
-
          //  alpha = shortest_distance(forward)
-         let alpha = shortest_distance(lattice, false).unwrap();
+         let alpha = shortest_distance(lattice, false)?;
          //  beta = shortest_distance(backward)
-         let beta = shortest_distance(lattice, true).unwrap();
+         let beta = shortest_distance(lattice, true)?;
 
          //  for every transition
-         let b0 = beta.get(0).unwrap();
+         let b0 = beta.get(0).ok_or("Failed to get beta[0]")?;
          for state_id in lattice.states_iter() {
-            let trs = lattice.tr_iter_mut(state_id).unwrap();
+            let trs = lattice.tr_iter_mut(state_id)?;
             for i in 0..trs.len() {
-               let tr = trs.get(i).unwrap();
-               let a = alpha.get(state_id as usize).unwrap();
-               let b = beta.get(tr.nextstate as usize).unwrap();
-               let v = a.times(tr.weight).unwrap()
-                        .times(b).unwrap()
-                        .divide(b0, DivideType::DivideAny).unwrap();
-               let partial_count = self.partial_counts.get_mut(&GPAlign(tr.ilabel, tr.olabel)).unwrap();
-               partial_count.plus_assign(v).unwrap();
-               self.total.plus_assign(v).unwrap();
+               let tr = trs.get(i).ok_or("Failed to get transition")?;
+               let a = alpha.get(state_id as usize).ok_or("Failed to get alpha value")?;
+               let b = beta.get(tr.nextstate as usize).ok_or("Failed to get beta value")?;
+               let v = a.times(tr.weight)?
+                        .times(b)?
+                        .divide(b0, DivideType::DivideAny)?;
+               let partial_count = self.partial_counts.get_mut(&GPAlign(tr.ilabel, tr.olabel))
+                   .ok_or("Failed to get partial count")?;
+               partial_count.plus_assign(v)?;
+               self.total.plus_assign(v)?;
             }
          }
       }
+      Ok(())
    }
 
-   fn maximization(&mut self) { // return necessary? 
+   fn maximization(&mut self) -> Result<(), Box<dyn std::error::Error>> {
       // for every unique transition in partial_counts:
       for count in self.partial_counts.values_mut() {
          // partial_count[input,output] - total
-         count.divide_assign(&self.total, DivideType::DivideAny).unwrap();
+         count.divide_assign(&self.total, DivideType::DivideAny)?;
       }
+      Ok(())
    }
 
-   fn reset_tr_weights(&mut self) {
+   fn reset_tr_weights(&mut self) -> Result<(), Box<dyn std::error::Error>> {
       for lattice in self.lattices.iter_mut() {
          for state_id in lattice.states_iter() {
-            let mut trs = lattice.tr_iter_mut(state_id).unwrap();
+            let mut trs = lattice.tr_iter_mut(state_id)?;
             for i in 0..trs.len() {
                // https://docs.rs/rustfst/latest/rustfst/trs_iter_mut/struct.TrsIterMut.html
-               let tr = trs.get(i).unwrap();
-               let partial_count = self.partial_counts.get(&GPAlign(tr.ilabel, tr.olabel)).unwrap();
+               let tr = trs.get(i).ok_or("Failed to get transition")?;
+               let partial_count = self.partial_counts.get(&GPAlign(tr.ilabel, tr.olabel))
+                   .ok_or("Failed to get partial count for transition")?;
                if (tr.weight.value() - partial_count.value()).abs() > self.max_change {
                   self.max_change = (tr.weight.value() - partial_count.value()).abs();
                }
-               trs.set_weight(i, LogWeight::new(*partial_count.value())).unwrap();
+               trs.set_weight(i, LogWeight::new(*partial_count.value()))?;
             }
          }
       }
+      Ok(())
    }
 
-   fn expectation_maximization(&mut self, max_iter: u32, threshold: f32) {
+   fn expectation_maximization(&mut self, max_iter: u32, threshold: f32) -> Result<(), Box<dyn std::error::Error>> {
       /*
          Perform the expectation-maximization algorithm for a predetermined
          number of iterations or until the maximum change in a transition
@@ -265,11 +276,12 @@ impl M2MFstAligner {
       let mut iter = 0;
 
       while iter < max_iter && !self.check_convergence(threshold) {
-         self.expectation();
-         self.maximization();
-         self.reset_tr_weights();
+         self.expectation()?;
+         self.maximization()?;
+         self.reset_tr_weights()?;
          iter += 1;
       }
+      Ok(())
    }
 
    fn check_convergence(&self, threshold: f32) -> bool {
