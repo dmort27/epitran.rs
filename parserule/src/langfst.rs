@@ -1,23 +1,42 @@
 //use std::error::Error;
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::process::Command;
+use std::sync::Arc;
 
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
 //use rustfst::prelude::determinize::{determinize, determinize_with_config, DeterminizeConfig};
-use rustfst::algorithms::{tr_sort, add_super_final_state, rm_epsilon::rm_epsilon, determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType}, push_weights, ReweightType, minimize};
-use rustfst::prelude::{compose::compose, union::union, closure::{closure, ClosureType}};
+use rustfst::algorithms::{
+    add_super_final_state,
+    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
+    minimize, minimize_with_config, MinimizeConfig, push_weights,
+    rm_epsilon::rm_epsilon,
+    tr_sort, ReweightType,
+};
 use rustfst::prelude::*;
+use rustfst::prelude::{
+    closure::{closure, ClosureType},
+    compose::compose,
+    union::union,
+};
 use rustfst::utils::{acceptor, transducer};
 //use rustfst::prelude::{TropicalWeight, VectorFst};
 
 // use anyhow::Result;
 
 use crate::mapparse::{process_map, ParsedMapping};
-use crate::rulefst::{compile_script, apply_fst};
+use crate::rulefst::{apply_fst, compile_script};
 use crate::ruleparse::parse_script;
 
+/// Build a wFST for a language using the preprocessing and postprocessing
+/// scripts and the mapping table.
+///
+/// The `preproc` and `postproc` arguments are scripts written in the format
+/// specified in [`crate::ruleparse`]. `mapping` is a table represented as CSV
+/// data (with the headers `orth` and `phon`). The resulting wFST is created by
+/// converting each of these strings into a wFST, then composing them. A
+/// `SymbolTable` `symt` is generated, based on characters and Unicode escapes
+/// found in the strings. This is also returned.
 pub fn build_lang_fst<'a>(
     preproc: &'a str,
     postproc: &'a str,
@@ -53,7 +72,8 @@ pub fn build_lang_fst<'a>(
     let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
 
     rm_epsilon(&mut composed_fst).unwrap();
-    top_sort(&mut composed_fst).unwrap_or_else(|e| {println!("{e}: Could not sort topologically. There is cycle")});
+    top_sort(&mut composed_fst)
+        .unwrap_or_else(|e| println!("{e}: Could not sort topologically. There is cycle"));
     // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
 
     Ok((symt, composed_fst))
@@ -86,11 +106,14 @@ fn compile_mapping_fst(
             let _ = transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next);
             last = next;
         });
-        transducer_fst.set_final(last, 0.0).unwrap_or_else(|e| {
-            println!("{e}: {last} is not a know state.")
-        });
+        transducer_fst
+            .set_final(last, 0.0)
+            .unwrap_or_else(|e| println!("{e}: {last} is not a know state."));
         union(&mut fst, &transducer_fst).unwrap_or_else(|e| {
-            println!("{e}: Could not compute the union between {:?} and {:?}", fst, transducer_fst)
+            println!(
+                "{e}: Could not compute the union between {:?} and {:?}",
+                fst, transducer_fst
+            )
         });
     });
     let qn = add_super_final_state(&mut fst);
@@ -101,10 +124,18 @@ fn compile_mapping_fst(
     //     }
     // });
     rm_epsilon(&mut fst).unwrap();
-    let mut fst: VectorFst<TropicalWeight> = determinize_with_config(&fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeFunctional })?;
+    let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
+        &fst,
+        DeterminizeConfig {
+            delta: 1e-6,
+            det_type: DeterminizeType::DeterminizeFunctional,
+        },
+    )?;
     push_weights(&mut fst, ReweightType::ReweightToInitial)?;
-    minimize(&mut fst);
+    minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
 
+    fst.set_input_symbols(symt.clone());
+    fst.set_output_symbols(symt.clone());
     let _ = fst.draw(
         "map_fst.dot",
         &DrawingConfig {
@@ -139,15 +170,13 @@ mod test {
 
     use crate::{langfst::build_lang_fst, rulefst::apply_fst};
 
-
     #[test]
     fn test_build_lang_fst1() {
         let pre_str = "a -> b / c_d";
         let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d";
         let post_str = "c -> d / _d";
-        let (symt, mut fst ) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
+        let (symt, mut fst) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
         let input = "acad";
         assert_eq!(apply_fst(symt, fst, input.to_string()), "acdd".to_string())
     }
-
 }
