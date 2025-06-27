@@ -5,4 +5,4 @@
 
 pub mod tokenize;
 
-pub use tokenize::tokenize_by_whitespace;
+pub use tokenize::{tokenize_by_whitespace, filter_by_symbols};

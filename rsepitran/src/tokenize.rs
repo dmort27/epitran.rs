@@ -1,4 +1,5 @@
 use unicode_segmentation::UnicodeSegmentation;
+use std::collections::HashSet;
 
 /// Tokenizes text by whitespace, returning sequences of graphemes without whitespace or punctuation.
 /// 
@@ -69,6 +70,71 @@ fn is_punctuation(grapheme: &str) -> bool {
         // Common individual punctuation characters
         matches!(c, '¡' | '¿' | '§' | '¶' | '†' | '‡' | '•' | '…' | '‰' | '‱')
     })
+}
+
+/// Filters input string to only contain substrings that are elements of the provided symbol set.
+/// 
+/// This function performs a greedy longest-match filtering, where it tries to match the longest
+/// possible substring from the symbol set at each position. If no match is found, that character
+/// is skipped. The result is a concatenation of all matched symbols.
+/// 
+/// # Arguments
+/// 
+/// * `input` - A string slice containing the text to filter
+/// * `syms` - A HashSet of strings representing the allowed symbols
+/// 
+/// # Returns
+/// 
+/// A string containing only the concatenated symbols from the set that were found in the input
+/// 
+/// # Examples
+/// 
+/// ```
+/// use rsepitran::tokenize::filter_by_symbols;
+/// use std::collections::HashSet;
+/// 
+/// let mut syms = HashSet::new();
+/// syms.insert("hello".to_string());
+/// syms.insert("world".to_string());
+/// syms.insert("h".to_string());
+/// syms.insert("e".to_string());
+/// 
+/// let input = "hello world!";
+/// let result = filter_by_symbols(input, &syms);
+/// assert_eq!(result, "helloworld");
+/// ```
+pub fn filter_by_symbols(input: &str, syms: &HashSet<String>) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+    let input_chars: Vec<char> = input.chars().collect();
+    
+    while i < input_chars.len() {
+        let mut matched = false;
+        let mut best_match_len = 0;
+        let mut best_match = String::new();
+        
+        // Try to find the longest matching symbol starting at position i
+        for j in (i + 1)..=input_chars.len() {
+            let candidate: String = input_chars[i..j].iter().collect();
+            if syms.contains(&candidate) {
+                if candidate.len() > best_match_len {
+                    best_match_len = candidate.len();
+                    best_match = candidate;
+                    matched = true;
+                }
+            }
+        }
+        
+        if matched {
+            result.push_str(&best_match);
+            i += best_match.chars().count();
+        } else {
+            // No match found, skip this character
+            i += 1;
+        }
+    }
+    
+    result
 }
 
 #[cfg(test)]
@@ -161,5 +227,133 @@ mod tests {
         let text = "Hello, world!";
         let tokens = tokenize_by_whitespace(text, "***");
         assert_eq!(tokens, vec!["***Hello***", "***world***"]);
+    }
+
+    #[test]
+    fn test_filter_by_symbols_basic() {
+        let mut syms = HashSet::new();
+        syms.insert("hello".to_string());
+        syms.insert("world".to_string());
+        syms.insert("h".to_string());
+        syms.insert("e".to_string());
+        
+        let input = "hello world!";
+        let result = filter_by_symbols(input, &syms);
+        assert_eq!(result, "helloworld");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_longest_match() {
+        let mut syms = HashSet::new();
+        syms.insert("a".to_string());
+        syms.insert("ab".to_string());
+        syms.insert("abc".to_string());
+        syms.insert("b".to_string());
+        syms.insert("c".to_string());
+        
+        let input = "abcdef";
+        let result = filter_by_symbols(input, &syms);
+        // Should prefer "abc" over "a" + "b" + "c"
+        assert_eq!(result, "abc");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_overlapping() {
+        let mut syms = HashSet::new();
+        syms.insert("cat".to_string());
+        syms.insert("at".to_string());
+        syms.insert("dog".to_string());
+        syms.insert("og".to_string());
+        
+        let input = "catdog";
+        let result = filter_by_symbols(input, &syms);
+        // Should prefer "cat" + "dog" over "cat" + "og" or other combinations
+        assert_eq!(result, "catdog");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_no_matches() {
+        let mut syms = HashSet::new();
+        syms.insert("x".to_string());
+        syms.insert("y".to_string());
+        syms.insert("z".to_string());
+        
+        let input = "hello world";
+        let result = filter_by_symbols(input, &syms);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_partial_matches() {
+        let mut syms = HashSet::new();
+        syms.insert("h".to_string());
+        syms.insert("e".to_string());
+        syms.insert("l".to_string());
+        syms.insert("o".to_string());
+        
+        let input = "hello world";
+        let result = filter_by_symbols(input, &syms);
+        // Should find: h-e-l-l-o (skip space and w) o (skip r) l (skip d)
+        assert_eq!(result, "hellool");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_unicode() {
+        let mut syms = HashSet::new();
+        syms.insert("café".to_string());
+        syms.insert("naïve".to_string());
+        syms.insert("é".to_string());
+        syms.insert("ï".to_string());
+        
+        let input = "café naïve résumé";
+        let result = filter_by_symbols(input, &syms);
+        // Should find: "café" (skip space) "naïve" (skip space and r) "é" (skip sum) "é"
+        assert_eq!(result, "cafénaïveéé");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_empty_input() {
+        let mut syms = HashSet::new();
+        syms.insert("test".to_string());
+        
+        let input = "";
+        let result = filter_by_symbols(input, &syms);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_empty_set() {
+        let syms = HashSet::new();
+        
+        let input = "hello world";
+        let result = filter_by_symbols(input, &syms);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_single_chars() {
+        let mut syms = HashSet::new();
+        syms.insert("a".to_string());
+        syms.insert("b".to_string());
+        syms.insert("c".to_string());
+        
+        let input = "abcdefabc";
+        let result = filter_by_symbols(input, &syms);
+        assert_eq!(result, "abcabc");
+    }
+
+    #[test]
+    fn test_filter_by_symbols_complex_overlapping() {
+        let mut syms = HashSet::new();
+        syms.insert("the".to_string());
+        syms.insert("he".to_string());
+        syms.insert("cat".to_string());
+        syms.insert("at".to_string());
+        syms.insert("t".to_string());
+        
+        let input = "thecat";
+        let result = filter_by_symbols(input, &syms);
+        // Should prefer "the" + "cat" over other combinations
+        assert_eq!(result, "thecat");
     }
 }
