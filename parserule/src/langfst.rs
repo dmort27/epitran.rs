@@ -78,39 +78,32 @@ fn compile_mapping_fst(
 ) -> Result<VectorFst<TropicalWeight>, Box<dyn std::error::Error>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     let q0 = fst.add_state();
-    let _ = fst.set_start(q0);
-    let _ = fst.set_final(q0, 1.0);
+    fst.set_start(q0)?;
+    fst.set_final(q0, 1.0)?;
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    mapping.iter().for_each(|m| {
+    for m in mapping.iter() {
         let mut transducer_fst: VectorFst<TropicalWeight> = VectorFst::new();
         let mut last = transducer_fst.add_state();
-        let _ = transducer_fst.set_start(last);
-        m.orth.iter().zip(m.phon.iter()).for_each(|(i, o)| {
+        transducer_fst.set_start(last)?;
+        for (i, o) in m.orth.iter().zip(m.phon.iter()) {
             let next = transducer_fst.add_state();
             let ilabel = symt.get_label(i).unwrap_or_else(|| {
-                println!("Symbol {i} is unknown.");
+                eprintln!("Warning: Symbol '{}' is unknown, using epsilon", i);
                 0
             });
             let olabel = symt.get_label(o).unwrap_or_else(|| {
-                println!("Symbol {o} is unknown.");
+                eprintln!("Warning: Symbol '{}' is unknown, using epsilon", o);
                 0
             });
-            let _ = transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next);
+            transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next)?;
             last = next;
-        });
-        transducer_fst
-            .set_final(last, 0.0)
-            .unwrap_or_else(|e| println!("{e}: {last} is not a know state."));
-        union(&mut fst, &transducer_fst).unwrap_or_else(|e| {
-            println!(
-                "{e}: Could not compute the union between {:?} and {:?}",
-                fst, transducer_fst
-            )
-        });
-    });
+        }
+        transducer_fst.set_final(last, 0.0)?;
+        union(&mut fst, &transducer_fst)?;
+    }
     let qn = add_super_final_state(&mut fst);
-    let _ = fst.emplace_tr(qn, 0, 0, 1.0, q0);
+    fst.emplace_tr(qn, 0, 0, 1.0, q0)?;
     // symt.labels().for_each(|l| {
     //     if l > 1 {
     //         let _ = fst.emplace_tr(q0, l, l, 1.0, q0);
@@ -152,9 +145,12 @@ fn compile_mapping_fst(
         ) {
             // Only attempt to run dot if the file was created successfully
             // This is optional and won't fail the function if dot is not available
-            let _ = std::process::Command::new("dot")
+            if let Err(e) = std::process::Command::new("dot")
                 .args(["-Tpdf", "-o", "map_fst.pdf", "map_fst.dot"])
-                .output(); // Use output() instead of spawn() to avoid panics
+                .output()
+            {
+                eprintln!("Warning: Could not run dot command: {}", e);
+            }
         }
     }
 
