@@ -5,14 +5,13 @@
 
 use anyhow::Result;
 use rustfst::algorithms::compose::compose;
-use rustfst::algorithms::{top_sort,
-    add_super_final_state, closure::closure, concat::concat, minimize, rm_epsilon::rm_epsilon,
-    tr_sort, union::union, determinize::{determinize_with_config, DeterminizeConfig,  DeterminizeType},
-    push_weights, ReweightType
+use rustfst::algorithms::{
+    add_super_final_state, closure::closure, concat::concat, minimize_with_config, MinimizeConfig, push_weights,
+    rm_epsilon::rm_epsilon, top_sort, tr_sort, union::union, ReweightType,
+    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
 };
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
-// use rustfst::prelude::determinize::{determinize, determinize_with_config, DeterminizeConfig};
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
@@ -90,10 +89,14 @@ pub fn compile_script(
                 tr_sort(&mut fst2, ILabelCompare {});
                 fst = compose(fst.clone(), fst2)?;
                 rm_epsilon(&mut fst).unwrap();
-                // fst = determinize_with_config(&fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeFunctional })?;
+                // let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
+                //     &fst,
+                //     DeterminizeConfig { 
+                //         delta: 1e-6,
+                //         det_type: DeterminizeType::DeterminizeFunctional
+                //     })?;
                 push_weights(&mut fst, ReweightType::ReweightToInitial)?;
-                minimize(&mut fst);
-
+                minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
             }
         }
     }
@@ -183,7 +186,7 @@ fn rule_fst(
     //     .expect("Could not open \"root_fst.pdf\".");
 
     rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
-    minimize(&mut root).unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
+    minimize_with_config(&mut root, MinimizeConfig { delta: 1e-7, allow_nondet: (true) }).unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
 
     Ok(root)
 }
@@ -373,6 +376,14 @@ fn node_fst(
     }
 
     let _ = rm_epsilon(&mut fst);
+    let mut fst = determinize_with_config(
+        &fst,
+        DeterminizeConfig { 
+            delta: 1e-6,
+            det_type: DeterminizeType::DeterminizeFunctional
+        })?;
+    push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+    minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
 
     Ok(fst)
 }
@@ -547,10 +558,11 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 /// assert_eq!(apply_fst(symt, fst, input), "cdc".to_string());
 /// ```
 pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
-    let composed_fst = apply_fst_to_string(symt.clone(), fst.clone(), input.clone()).unwrap_or_else(|e| {
-        println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
-        VectorFst::<TropicalWeight>::new()
-    });
+    let composed_fst = apply_fst_to_string(symt.clone(), fst.clone(), input.clone())
+        .unwrap_or_else(|e| {
+            println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
+            VectorFst::<TropicalWeight>::new()
+        });
     if is_cyclic(&composed_fst) {
         panic!("Transducer resulting from applying composing input string was cyclic.")
     }
@@ -745,10 +757,7 @@ mod tests {
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
-        assert_eq!(
-            apply_fst(symt, fst, "#aa#".to_string()),
-            "#ee#".to_string()
-        );
+        assert_eq!(apply_fst(symt, fst, "#aa#".to_string()), "#ee#".to_string());
     }
 
     #[test]
