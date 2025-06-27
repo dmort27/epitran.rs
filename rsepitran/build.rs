@@ -37,6 +37,7 @@ fn main() -> Result<()> {
     let mut lang_data = Vec::new();
     
     for lang_code in &lang_codes {
+        println!("Building wFST for {}.", lang_code);
         match get_language_data(lang_code) {
             Ok((map_content, pre_content, post_content)) => {
                 let var_prefix = lang_code.replace("-", "_").to_uppercase();
