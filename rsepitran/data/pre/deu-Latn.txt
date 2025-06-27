@@ -1,0 +1,2 @@
+::vowel:: = a|ä|e|i|o|ö|u|ü
+::consonant:: = b|c|ch|ck|d|dt|f|g|h|j|k|l|m|n|p|pf|r|s|sch|t|tsch|tz|tzsch|v|w|z
