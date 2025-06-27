@@ -609,7 +609,7 @@ mod tests {
         let (script, _syms) = parse_script(
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
-        .unwrap();
+        .expect("Failed to parse script in test");
         println!("script={:?}", script);
         let fst = compile_script(symt.clone(), script).expect("Failed to compile script in test");
         let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
