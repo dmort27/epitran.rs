@@ -512,13 +512,12 @@ pub fn decode_paths_through_fst(
     let symt: Arc<SymbolTable> = symt.clone();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    let paths: Vec<_> = match fst.string_paths_iter() {
-        Ok(iter) => iter.collect(),
-        Err(e) => {
-            eprintln!("Error: Could not iterate over FST paths: {}", e);
-            Vec::new()
-        }
-    };
+    // Need proper error handling here.
+    let paths: Vec<_> = fst
+        .string_paths_iter()
+        .inspect_err(|e| println!("{e}: error iterating over paths."))
+        .unwrap()
+        .collect();
     let mut outputs: Vec<(TropicalWeight, String)> = paths
         .iter()
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
