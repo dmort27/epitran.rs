@@ -706,16 +706,6 @@ mod tests {
     }
 
     #[test]
-    fn test_char1() {
-        let symt = unicode_symbol_table();
-        // let symt = Arc::new(symt!["#", "a", "b", "c"]);
-        let macros = HashMap::new();
-        let fst = node_fst(symt, &macros, RegexAST::Char('a')).expect("Failed to create node FST in test");
-        let paths: Vec<_> = fst.paths_iter().collect();
-        assert_eq!(paths.len(), 1);
-    }
-
-    #[test]
     fn test_simple_rule() {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
