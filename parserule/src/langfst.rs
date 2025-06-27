@@ -1,12 +1,13 @@
 //use std::error::Error;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::process::Command;
 
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
 //use rustfst::prelude::determinize::{determinize, determinize_with_config, DeterminizeConfig};
-use rustfst::algorithms::tr_sort;
-use rustfst::prelude::{compose::compose, union::union};
+use rustfst::algorithms::{tr_sort, add_super_final_state, rm_epsilon::rm_epsilon, determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType}, push_weights, ReweightType, minimize};
+use rustfst::prelude::{compose::compose, union::union, closure::{closure, ClosureType}};
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
 //use rustfst::prelude::{TropicalWeight, VectorFst};
@@ -14,7 +15,7 @@ use rustfst::utils::{acceptor, transducer};
 // use anyhow::Result;
 
 use crate::mapparse::{process_map, ParsedMapping};
-use crate::rulefst::compile_script;
+use crate::rulefst::{compile_script, apply_fst};
 use crate::ruleparse::parse_script;
 
 pub fn build_lang_fst<'a>(
@@ -35,6 +36,7 @@ pub fn build_lang_fst<'a>(
     syms.extend(&postproc_syms);
 
     let mut symt_inner = SymbolTable::new();
+    symt_inner.add_symbol("#");
     symt_inner.add_symbols(syms);
     let symt = Arc::new(symt_inner);
 
@@ -48,7 +50,11 @@ pub fn build_lang_fst<'a>(
 
     tr_sort(&mut composed_fst, OLabelCompare {});
     tr_sort(&mut postproc_fst, ILabelCompare {});
-    let composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
+    let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
+
+    rm_epsilon(&mut composed_fst).unwrap();
+    top_sort(&mut composed_fst).unwrap_or_else(|e| {println!("{e}: Could not sort topologically. There is cycle")});
+    // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
 
     Ok((symt, composed_fst))
 }
@@ -60,6 +66,9 @@ fn compile_mapping_fst(
     let mut fst = VectorFst::<TropicalWeight>::new();
     let mut q0 = fst.add_state();
     let _ = fst.set_start(q0);
+    let _ = fst.set_final(q0, 1.0);
+    fst.set_input_symbols(symt.clone());
+    fst.set_output_symbols(symt.clone());
     mapping.iter().for_each(|m| {
         let mut transducer_fst: VectorFst<TropicalWeight> = VectorFst::new();
         let mut last = transducer_fst.add_state();
@@ -77,8 +86,68 @@ fn compile_mapping_fst(
             let _ = transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next);
             last = next;
         });
-        transducer_fst.set_final(last, 0.0);
-        union(&mut fst, &transducer_fst);
+        transducer_fst.set_final(last, 0.0).unwrap_or_else(|e| {
+            println!("{e}: {last} is not a know state.")
+        });
+        union(&mut fst, &transducer_fst).unwrap_or_else(|e| {
+            println!("{e}: Could not compute the union between {:?} and {:?}", fst, transducer_fst)
+        });
     });
+    let qn = add_super_final_state(&mut fst);
+    let _ = fst.emplace_tr(qn, 0, 0, 1.0, q0);
+    // symt.labels().for_each(|l| {
+    //     if l > 1 {
+    //         let _ = fst.emplace_tr(q0, l, l, 1.0, q0);
+    //     }
+    // });
+    rm_epsilon(&mut fst).unwrap();
+    let mut fst: VectorFst<TropicalWeight> = determinize_with_config(&fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeFunctional })?;
+    push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+    minimize(&mut fst);
+
+    let _ = fst.draw(
+        "map_fst.dot",
+        &DrawingConfig {
+            vertical: false,
+            size: (Some((10.0, 10.0))),
+            title: ("Mapping FST".to_string()),
+            portrait: (true),
+            ranksep: (None),
+            nodesep: (None),
+            fontsize: (12),
+            acceptor: (false),
+            show_weight_one: (true),
+            print_weight: (true),
+        },
+    );
+    Command::new("dot")
+        .args(["-Tpdf", "-o map_fst.pdf", "map_fst.dot"])
+        .spawn()
+        .expect("Could not run dot on dot file \"map_fst.dot\".");
+
+    Command::new("open")
+        .arg("map_fst.pdf")
+        .spawn()
+        .expect("Could not open \"map_fst.pdf\".");
+
     Ok(fst)
+}
+
+#[cfg(test)]
+mod test {
+    use rustfst::prelude::rm_epsilon::rm_epsilon;
+
+    use crate::{langfst::build_lang_fst, rulefst::apply_fst};
+
+
+    #[test]
+    fn test_build_lang_fst1() {
+        let pre_str = "a -> b / c_d";
+        let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d";
+        let post_str = "c -> d / _d";
+        let (symt, mut fst ) = build_lang_fst(pre_str, post_str, mapping_str).unwrap();
+        let input = "acad";
+        assert_eq!(apply_fst(symt, fst, input.to_string()), "acdd".to_string())
+    }
+
 }

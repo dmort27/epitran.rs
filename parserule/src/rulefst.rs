@@ -5,9 +5,10 @@
 
 use anyhow::Result;
 use rustfst::algorithms::compose::compose;
-use rustfst::algorithms::{
+use rustfst::algorithms::{top_sort,
     add_super_final_state, closure::closure, concat::concat, minimize, rm_epsilon::rm_epsilon,
-    tr_sort, union::union,
+    tr_sort, union::union, determinize::{determinize_with_config, DeterminizeConfig,  DeterminizeType},
+    push_weights, ReweightType
 };
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
@@ -35,6 +36,10 @@ enum Action {
     Enter,
     Exit,
 }
+
+// fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
+//     top_sort(&mut fst.clone()).is_err()
+// }
 
 /// Return a symbol table based on a specified unicode range (our Σ).
 pub fn unicode_symbol_table() -> Arc<SymbolTable> {
@@ -84,9 +89,15 @@ pub fn compile_script(
                 tr_sort(&mut fst, OLabelCompare {});
                 tr_sort(&mut fst2, ILabelCompare {});
                 fst = compose(fst.clone(), fst2)?;
+                rm_epsilon(&mut fst).unwrap();
+                // fst = determinize_with_config(&fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeFunctional })?;
+                push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+                minimize(&mut fst);
+
             }
         }
     }
+
     Ok(fst)
 }
 
@@ -377,7 +388,7 @@ fn node_fst(
 // }
 
 /// Returns true if the wFST has a cycle. Otherwise, it returns false.
-pub fn is_cyclic(fst: VectorFst<TropicalWeight>) -> bool {
+pub fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
     let fst = fst.clone();
     let mut stack: Vec<(Action, StateId)> = Vec::new();
     // println!("num states={}", fst.num_states());
@@ -524,7 +535,7 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 ///
 /// ```
 /// # use std::sync::Arc;
-/// # use parserule::rulefst::test_apply;
+/// # use parserule::rulefst::apply_fst;
 /// # use rustfst::fst_impls::VectorFst;
 /// # use rustfst::prelude::*;
 /// # use rustfst::utils::{acceptor, transducer};
@@ -533,10 +544,16 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 /// fst.set_input_symbols(symt.clone());
 /// fst.set_output_symbols(symt.clone());
 /// let input = "aba".to_string();
-/// assert_eq!(test_apply(symt, fst, input), "cdc".to_string());
+/// assert_eq!(apply_fst(symt, fst, input), "cdc".to_string());
 /// ```
-pub fn test_apply(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
-    let composed_fst = apply_fst_to_string(symt.clone(), fst, input).unwrap();
+pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
+    let composed_fst = apply_fst_to_string(symt.clone(), fst.clone(), input.clone()).unwrap_or_else(|e| {
+        println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
+        VectorFst::<TropicalWeight>::new()
+    });
+    if is_cyclic(&composed_fst) {
+        panic!("Transducer resulting from applying composing input string was cyclic.")
+    }
     let outputs = decode_paths_through_fst(symt.clone(), composed_fst);
     if let Some((_, best_string)) = outputs.first() {
         best_string.clone()
@@ -561,7 +578,7 @@ mod tests {
             println!("{e}: Could not compile script.");
             VectorFst::<TropicalWeight>::new()
         });
-        let result = test_apply(symt.clone(), fst, "#ni1hao3#".to_string());
+        let result = apply_fst(symt.clone(), fst, "#ni1hao3#".to_string());
         assert_eq!(result, "#ni{14}hao{4}#".to_string());
     }
 
@@ -574,7 +591,7 @@ mod tests {
         .unwrap();
         println!("script={:?}", script);
         let fst = compile_script(symt.clone(), script).unwrap();
-        let result = test_apply(symt.clone(), fst, "apbppi".to_string());
+        let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
         assert_eq!(result, "abbppi".to_string());
     }
 
@@ -583,7 +600,7 @@ mod tests {
         let (_, (rewrite_rule, syms)) = rule(rule_str).unwrap();
         let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule).unwrap();
         assert_eq!(
-            test_apply(symt.clone(), fst, input.to_string()),
+            apply_fst(symt.clone(), fst, input.to_string()),
             output.to_string()
         )
     }
@@ -714,7 +731,7 @@ mod tests {
         //         print_weight: (true),
         //     },
         // );
-        assert_eq!(test_apply(symt, fst, "#a#".to_string()), "#e#".to_string());
+        assert_eq!(apply_fst(symt, fst, "#a#".to_string()), "#e#".to_string());
     }
 
     #[test]
@@ -729,7 +746,7 @@ mod tests {
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(
-            test_apply(symt, fst, "#aa#".to_string()),
+            apply_fst(symt, fst, "#aa#".to_string()),
             "#ee#".to_string()
         );
     }
@@ -746,7 +763,7 @@ mod tests {
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(
-            test_apply(symt, fst, "#apa#".to_string()),
+            apply_fst(symt, fst, "#apa#".to_string()),
             "#aba#".to_string()
         );
     }
@@ -763,7 +780,7 @@ mod tests {
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(
-            test_apply(symt, fst, "#apaapa#".to_string()),
+            apply_fst(symt, fst, "#apaapa#".to_string()),
             "#abaaba#".to_string()
         );
     }
@@ -776,7 +793,7 @@ mod tests {
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
-            test_apply(symt, fst, "#apab#".to_string()),
+            apply_fst(symt, fst, "#apab#".to_string()),
             "#aiai#".to_string()
         );
     }
@@ -789,7 +806,7 @@ mod tests {
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
-            test_apply(symt, fst, "#pabaaa#".to_string()),
+            apply_fst(symt, fst, "#pabaaa#".to_string()),
             "#pibiaa#".to_string()
         );
     }
@@ -802,7 +819,7 @@ mod tests {
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
-            test_apply(symt, fst, "#pabaa#".to_string()),
+            apply_fst(symt, fst, "#pabaa#".to_string()),
             "#pabai#".to_string()
         );
     }
