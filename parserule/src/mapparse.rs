@@ -66,7 +66,7 @@ mod tests {
                 phon: vec!["c".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).unwrap(), (syms, mapping));
+        assert_eq!(process_map(data).expect("Failed to process map data in test"), (syms, mapping));
     }
 
     #[test]
@@ -87,6 +87,6 @@ mod tests {
                 phon: vec!["ɐ".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).unwrap(), (syms, mapping));
+        assert_eq!(process_map(data).expect("Failed to process map data with unicode escapes in test"), (syms, mapping));
     }
 }

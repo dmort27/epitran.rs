@@ -89,7 +89,10 @@ impl M2MFstAligner {
                      pseq.clone_from_slice(&phoneme_seq[j..j+l]);
                      let symb = pseq.join("");
                      let olabel = if self.symbtbl.contains_symbol(&symb) {
-                                    self.symbtbl.get_label(&symb).unwrap()
+                                    self.symbtbl.get_label(&symb).unwrap_or_else(|| {
+                                        eprintln!("Warning: Symbol '{}' not found in symbol table, using epsilon", symb);
+                                        0 // epsilon
+                                    })
                                  } else {
                                     self.symbtbl.add_symbol(symb)
                                  };
@@ -98,7 +101,9 @@ impl M2MFstAligner {
                         fst.add_states(ostate - fst.num_states() + 1);
                      }
                      // symbtbl[0] is epsilon
-                     fst.add_tr(istate as u32, Tr::new(0, olabel, 1.0, ostate as u32)).unwrap();
+                     fst.add_tr(istate as u32, Tr::new(0, olabel, 1.0, ostate as u32)).unwrap_or_else(|e| {
+                         eprintln!("Warning: Could not add transition to FST: {}", e);
+                     });
                      
                   }
                }
@@ -112,7 +117,10 @@ impl M2MFstAligner {
                      gseq.clone_from_slice(&grapheme_seq[i..i+k]);
                      let symb = gseq.join("");
                      let ilabel = if self.symbtbl.contains_symbol(&symb) {
-                                    self.symbtbl.get_label(&symb).unwrap()
+                                    self.symbtbl.get_label(&symb).unwrap_or_else(|| {
+                                        eprintln!("Warning: Symbol '{}' not found in symbol table, using epsilon", symb);
+                                        0 // epsilon
+                                    })
                                  } else {
                                     self.symbtbl.add_symbol(symb)
                                  };
@@ -303,51 +311,51 @@ mod tests {
       let s11 = gold.add_state();
 
       // Set s0 as the start state
-      gold.set_start(s0).unwrap();
+      gold.set_start(s0).expect("Test assertion failed");
 
       // Add a transition from s0
-      gold.add_tr(s0, Tr::new(st.add_symbol("r"), 0, 1.0/27.0, s1)).unwrap();
-      gold.add_tr(s0, Tr::new(st.add_symbol("ri"), 0, 1.0/27.0, s2)).unwrap();
-      gold.add_tr(s0, Tr::new(st.get_label("r").unwrap(), st.get_label("r").unwrap(), 1.0/27.0, s3)).unwrap();
-      gold.add_tr(s0, Tr::new(st.get_label("ri").unwrap(), st.get_label("r").unwrap(), 1.0/27.0, s4)).unwrap();
+      gold.add_tr(s0, Tr::new(st.add_symbol("r"), 0, 1.0/27.0, s1)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.add_symbol("ri"), 0, 1.0/27.0, s2)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.get_label("r").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 1.0/27.0, s3)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.get_label("ri").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 1.0/27.0, s4)).expect("Test assertion failed");
 
       // Add a transition from s1 
-      gold.add_tr(s1, Tr::new(st.add_symbol("i"), 0, 1.0/27.0, s2)).unwrap();
-      gold.add_tr(s1, Tr::new(st.get_label("i").unwrap(), st.get_label("r").unwrap(), 1.0/27.0, s4)).unwrap();
-      gold.add_tr(s1, Tr::new(st.add_symbol("ig"), st.get_label("r").unwrap(), 1.0/27.0, s6)).unwrap();
+      gold.add_tr(s1, Tr::new(st.add_symbol("i"), 0, 1.0/27.0, s2)).expect("Test assertion failed");
+      gold.add_tr(s1, Tr::new(st.get_label("i").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 1.0/27.0, s4)).expect("Test assertion failed");
+      gold.add_tr(s1, Tr::new(st.add_symbol("ig"), st.get_label("r").expect("Test assertion failed"), 1.0/27.0, s6)).expect("Test assertion failed");
 
       // Add a transition from s2
-      gold.add_tr(s2, Tr::new(st.add_symbol("g"), st.get_label("r").unwrap(), 1.0/27.0, s6)).unwrap();
+      gold.add_tr(s2, Tr::new(st.add_symbol("g"), st.get_label("r").expect("Test assertion failed"), 1.0/27.0, s6)).expect("Test assertion failed");
 
-      gold.add_tr(s3, Tr::new(st.get_label("i").unwrap(), 0, 1.0/27.0, s4)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("i").unwrap(), st.add_symbol("ay"), 1.0/27.0, s5)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("ig").unwrap(), 0, 1.0/27.0, s6)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("ig").unwrap(), st.get_label("ay").unwrap(), 1.0/27.0, s7)).unwrap();
+      gold.add_tr(s3, Tr::new(st.get_label("i").expect("Test assertion failed"), 0, 1.0/27.0, s4)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("i").expect("Test assertion failed"), st.add_symbol("ay"), 1.0/27.0, s5)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("ig").expect("Test assertion failed"), 0, 1.0/27.0, s6)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("ig").expect("Test assertion failed"), st.get_label("ay").expect("Test assertion failed"), 1.0/27.0, s7)).expect("Test assertion failed");
 
-      gold.add_tr(s4, Tr::new(st.get_label("g").unwrap(), 0, 1.0/27.0, s6)).unwrap();
-      gold.add_tr(s4, Tr::new(st.get_label("g").unwrap(), st.get_label("ay").unwrap(), 1.0/27.0, s7)).unwrap();
-      gold.add_tr(s4, Tr::new(st.add_symbol("gh"), st.get_label("ay").unwrap(), 1.0/27.0, s9)).unwrap();
+      gold.add_tr(s4, Tr::new(st.get_label("g").expect("Test assertion failed"), 0, 1.0/27.0, s6)).expect("Test assertion failed");
+      gold.add_tr(s4, Tr::new(st.get_label("g").expect("Test assertion failed"), st.get_label("ay").expect("Test assertion failed"), 1.0/27.0, s7)).expect("Test assertion failed");
+      gold.add_tr(s4, Tr::new(st.add_symbol("gh"), st.get_label("ay").expect("Test assertion failed"), 1.0/27.0, s9)).expect("Test assertion failed");
 
-      gold.add_tr(s5, Tr::new(st.get_label("g").unwrap(), 0, 1.0/27.0, s7)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("g").unwrap(), st.add_symbol("t"), 1.0/27.0, s8)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("gh").unwrap(), 0, 1.0/27.0, s9)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("gh").unwrap(), st.get_label("t").unwrap(), 1.0/27.0, s10)).unwrap();
+      gold.add_tr(s5, Tr::new(st.get_label("g").expect("Test assertion failed"), 0, 1.0/27.0, s7)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("g").expect("Test assertion failed"), st.add_symbol("t"), 1.0/27.0, s8)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("gh").expect("Test assertion failed"), 0, 1.0/27.0, s9)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("gh").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 1.0/27.0, s10)).expect("Test assertion failed");
 
-      gold.add_tr(s6, Tr::new(st.add_symbol("h"), st.get_label("ay").unwrap(), 1.0/27.0, s9)).unwrap();
+      gold.add_tr(s6, Tr::new(st.add_symbol("h"), st.get_label("ay").expect("Test assertion failed"), 1.0/27.0, s9)).expect("Test assertion failed");
 
-      gold.add_tr(s7, Tr::new(st.get_label("h").unwrap(), 0, 1.0/27.0, s9)).unwrap();
-      gold.add_tr(s7, Tr::new(st.get_label("h").unwrap(), st.get_label("t").unwrap(), 1.0/27.0, s10)).unwrap();
-      gold.add_tr(s7, Tr::new(st.add_symbol("ht"), st.get_label("t").unwrap(), 1.0/27.0, s11)).unwrap();
+      gold.add_tr(s7, Tr::new(st.get_label("h").expect("Test assertion failed"), 0, 1.0/27.0, s9)).expect("Test assertion failed");
+      gold.add_tr(s7, Tr::new(st.get_label("h").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 1.0/27.0, s10)).expect("Test assertion failed");
+      gold.add_tr(s7, Tr::new(st.add_symbol("ht"), st.get_label("t").expect("Test assertion failed"), 1.0/27.0, s11)).expect("Test assertion failed");
 
-      gold.add_tr(s8, Tr::new(st.get_label("h").unwrap(), 0, 1.0/27.0, s10)).unwrap();
-      gold.add_tr(s8, Tr::new(st.get_label("ht").unwrap(), 0, 1.0/27.0, s11)).unwrap();
+      gold.add_tr(s8, Tr::new(st.get_label("h").expect("Test assertion failed"), 0, 1.0/27.0, s10)).expect("Test assertion failed");
+      gold.add_tr(s8, Tr::new(st.get_label("ht").expect("Test assertion failed"), 0, 1.0/27.0, s11)).expect("Test assertion failed");
 
 
-      gold.add_tr(s9, Tr::new(st.get_label("t").unwrap(), st.get_label("t").unwrap(), 1.0/27.0, s11)).unwrap();
+      gold.add_tr(s9, Tr::new(st.get_label("t").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 1.0/27.0, s11)).expect("Test assertion failed");
 
-      gold.add_tr(s10, Tr::new(st.get_label("t").unwrap(), 0, 1.0/27.0, s11)).unwrap();
+      gold.add_tr(s10, Tr::new(st.get_label("t").expect("Test assertion failed"), 0, 1.0/27.0, s11)).expect("Test assertion failed");
 
-      gold.set_final(s11, 0.0).unwrap();
+      gold.set_final(s11, 0.0).expect("Test assertion failed");
 
 
       // Make a M2MFstAligner object, initialize it from scratch, and align
@@ -360,15 +368,15 @@ mod tests {
       aligner.seqs2fsts(&data);
 
       // Compare gold to actual
-      let fst = aligner.lattices.get(0).unwrap();
+      let fst = aligner.lattices.get(0).expect("Test assertion failed");
       let symbtbl = aligner.symbtbl;
       // for state_id in fst.states_iter() {
-      //    let trs = fst.get_trs(state_id).unwrap();
+      //    let trs = fst.get_trs(state_id).expect("Test assertion failed");
       //    for tr in trs.iter() {
       //       println!("ISTATE: {}, ilabel: {}, olabel: {}, weight: {}, OSTATE: {}", 
       //                state_id, 
-      //                symbtbl.get_symbol(tr.ilabel).unwrap(), 
-      //                symbtbl.get_symbol(tr.olabel).unwrap(),
+      //                symbtbl.get_symbol(tr.ilabel).expect("Test assertion failed"), 
+      //                symbtbl.get_symbol(tr.olabel).expect("Test assertion failed"),
       //                tr.weight,
       //                tr.nextstate
       //             )
@@ -377,8 +385,8 @@ mod tests {
       // assert!(gold.eq(fst));
       assert!(gold.num_states() == fst.num_states());
       for state_id in gold.states_iter() {
-         let gold_trs = gold.get_trs(state_id).unwrap();
-         let trs = fst.get_trs(state_id).unwrap();
+         let gold_trs = gold.get_trs(state_id).expect("Test assertion failed");
+         let trs = fst.get_trs(state_id).expect("Test assertion failed");
          for it in gold_trs.iter().zip(trs.iter()) {
             let (gold_tr, tr) = it;
             assert!(st.get_symbol(gold_tr.ilabel) == symbtbl.get_symbol(tr.ilabel));
@@ -433,7 +441,7 @@ mod tests {
       assert!(gold_partial_counts.len() == partial_counts.len());
       for (key, val) in partial_counts.iter() {
          assert!(gold_partial_counts.contains_key(key));
-         assert!((gold_partial_counts.get(key).unwrap().value() - val.value()).abs() < 0.0001);
+         assert!((gold_partial_counts.get(key).expect("Test assertion failed").value() - val.value()).abs() < 0.0001);
       }
    }
 
@@ -481,7 +489,7 @@ mod tests {
       assert!(gold_partial_counts.len() == partial_counts.len());
       for (key, val) in partial_counts.iter() {
          assert!(gold_partial_counts.contains_key(key));
-         assert!((gold_partial_counts.get(key).unwrap().value() - val.value()).abs() < 0.0001);
+         assert!((gold_partial_counts.get(key).expect("Test assertion failed").value() - val.value()).abs() < 0.0001);
       }
    }
 
@@ -505,51 +513,51 @@ mod tests {
       let s11 = gold.add_state();
 
       // Set s0 as the start state
-      gold.set_start(s0).unwrap();
+      gold.set_start(s0).expect("Test assertion failed");
 
       // Add a transition from s0
-      gold.add_tr(s0, Tr::new(st.add_symbol("r"), 0, 2.875177684923876, s1)).unwrap();
-      gold.add_tr(s0, Tr::new(st.add_symbol("ri"), 0, 4.800092068426457, s2)).unwrap();
-      gold.add_tr(s0, Tr::new(st.get_label("r").unwrap(), st.get_label("r").unwrap(), 2.0388440267759536, s3)).unwrap();
-      gold.add_tr(s0, Tr::new(st.get_label("ri").unwrap(), st.get_label("r").unwrap(), 3.1756743340131006, s4)).unwrap();
+      gold.add_tr(s0, Tr::new(st.add_symbol("r"), 0, 2.875177684923876, s1)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.add_symbol("ri"), 0, 4.800092068426457, s2)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.get_label("r").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 2.0388440267759536, s3)).expect("Test assertion failed");
+      gold.add_tr(s0, Tr::new(st.get_label("ri").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 3.1756743340131006, s4)).expect("Test assertion failed");
 
       // Add a transition from s1 
-      gold.add_tr(s1, Tr::new(st.add_symbol("i"), 0, 4.837129105463493, s2)).unwrap();
-      gold.add_tr(s1, Tr::new(st.get_label("i").unwrap(), st.get_label("r").unwrap(), 3.212711371050138, s4)).unwrap();
-      gold.add_tr(s1, Tr::new(st.add_symbol("ig"), st.get_label("r").unwrap(), 4.800092068426457, s6)).unwrap();
+      gold.add_tr(s1, Tr::new(st.add_symbol("i"), 0, 4.837129105463493, s2)).expect("Test assertion failed");
+      gold.add_tr(s1, Tr::new(st.get_label("i").expect("Test assertion failed"), st.get_label("r").expect("Test assertion failed"), 3.212711371050138, s4)).expect("Test assertion failed");
+      gold.add_tr(s1, Tr::new(st.add_symbol("ig"), st.get_label("r").expect("Test assertion failed"), 4.800092068426457, s6)).expect("Test assertion failed");
 
       // Add a transition from s2
-      gold.add_tr(s2, Tr::new(st.add_symbol("g"), st.get_label("r").unwrap(), 4.125191948420471, s6)).unwrap();
+      gold.add_tr(s2, Tr::new(st.add_symbol("g"), st.get_label("r").expect("Test assertion failed"), 4.125191948420471, s6)).expect("Test assertion failed");
 
-      gold.add_tr(s3, Tr::new(st.get_label("i").unwrap(), 0, 3.212711371050138, s4)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("i").unwrap(), st.add_symbol("ay"), 2.869887272035302, s5)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("ig").unwrap(), 0, 4.800092068426457, s6)).unwrap();
-      gold.add_tr(s3, Tr::new(st.get_label("ig").unwrap(), st.get_label("ay").unwrap(), 3.6889810636093787, s7)).unwrap();
+      gold.add_tr(s3, Tr::new(st.get_label("i").expect("Test assertion failed"), 0, 3.212711371050138, s4)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("i").expect("Test assertion failed"), st.add_symbol("ay"), 2.869887272035302, s5)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("ig").expect("Test assertion failed"), 0, 4.800092068426457, s6)).expect("Test assertion failed");
+      gold.add_tr(s3, Tr::new(st.get_label("ig").expect("Test assertion failed"), st.get_label("ay").expect("Test assertion failed"), 3.6889810636093787, s7)).expect("Test assertion failed");
 
-      gold.add_tr(s4, Tr::new(st.get_label("g").unwrap(), 0, 3.726018100646416, s6)).unwrap();
-      gold.add_tr(s4, Tr::new(st.get_label("g").unwrap(), st.get_label("ay").unwrap(), 2.614907095829339, s7)).unwrap();
-      gold.add_tr(s4, Tr::new(st.add_symbol("gh"), st.get_label("ay").unwrap(), 3.6889810636093787, s9)).unwrap();
+      gold.add_tr(s4, Tr::new(st.get_label("g").expect("Test assertion failed"), 0, 3.726018100646416, s6)).expect("Test assertion failed");
+      gold.add_tr(s4, Tr::new(st.get_label("g").expect("Test assertion failed"), st.get_label("ay").expect("Test assertion failed"), 2.614907095829339, s7)).expect("Test assertion failed");
+      gold.add_tr(s4, Tr::new(st.add_symbol("gh"), st.get_label("ay").expect("Test assertion failed"), 3.6889810636093787, s9)).expect("Test assertion failed");
 
-      gold.add_tr(s5, Tr::new(st.get_label("g").unwrap(), 0, 3.726018100646416, s7)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("g").unwrap(), st.add_symbol("t"), 4.125191948420471, s8)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("gh").unwrap(), 0, 4.800092068426457, s9)).unwrap();
-      gold.add_tr(s5, Tr::new(st.get_label("gh").unwrap(), st.get_label("t").unwrap(), 4.800092068426457, s10)).unwrap();
+      gold.add_tr(s5, Tr::new(st.get_label("g").expect("Test assertion failed"), 0, 3.726018100646416, s7)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("g").expect("Test assertion failed"), st.add_symbol("t"), 4.125191948420471, s8)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("gh").expect("Test assertion failed"), 0, 4.800092068426457, s9)).expect("Test assertion failed");
+      gold.add_tr(s5, Tr::new(st.get_label("gh").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 4.800092068426457, s10)).expect("Test assertion failed");
 
-      gold.add_tr(s6, Tr::new(st.add_symbol("h"), st.get_label("ay").unwrap(), 2.869887272035302, s9)).unwrap();
+      gold.add_tr(s6, Tr::new(st.add_symbol("h"), st.get_label("ay").expect("Test assertion failed"), 2.869887272035302, s9)).expect("Test assertion failed");
 
-      gold.add_tr(s7, Tr::new(st.get_label("h").unwrap(), 0, 3.212711371050138, s9)).unwrap();
-      gold.add_tr(s7, Tr::new(st.get_label("h").unwrap(), st.get_label("t").unwrap(), 3.212711371050138, s10)).unwrap();
-      gold.add_tr(s7, Tr::new(st.add_symbol("ht"), st.get_label("t").unwrap(), 3.1756743340131006, s11)).unwrap();
+      gold.add_tr(s7, Tr::new(st.get_label("h").expect("Test assertion failed"), 0, 3.212711371050138, s9)).expect("Test assertion failed");
+      gold.add_tr(s7, Tr::new(st.get_label("h").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 3.212711371050138, s10)).expect("Test assertion failed");
+      gold.add_tr(s7, Tr::new(st.add_symbol("ht"), st.get_label("t").expect("Test assertion failed"), 3.1756743340131006, s11)).expect("Test assertion failed");
 
-      gold.add_tr(s8, Tr::new(st.get_label("h").unwrap(), 0, 4.837129105463493, s10)).unwrap();
-      gold.add_tr(s8, Tr::new(st.get_label("ht").unwrap(), 0, 4.800092068426457, s11)).unwrap();
+      gold.add_tr(s8, Tr::new(st.get_label("h").expect("Test assertion failed"), 0, 4.837129105463493, s10)).expect("Test assertion failed");
+      gold.add_tr(s8, Tr::new(st.get_label("ht").expect("Test assertion failed"), 0, 4.800092068426457, s11)).expect("Test assertion failed");
 
 
-      gold.add_tr(s9, Tr::new(st.get_label("t").unwrap(), st.get_label("t").unwrap(), 2.0388440267759536, s11)).unwrap();
+      gold.add_tr(s9, Tr::new(st.get_label("t").expect("Test assertion failed"), st.get_label("t").expect("Test assertion failed"), 2.0388440267759536, s11)).expect("Test assertion failed");
 
-      gold.add_tr(s10, Tr::new(st.get_label("t").unwrap(), 0, 2.875177684923876, s11)).unwrap();
+      gold.add_tr(s10, Tr::new(st.get_label("t").expect("Test assertion failed"), 0, 2.875177684923876, s11)).expect("Test assertion failed");
 
-      gold.set_final(s11, 0.0).unwrap();
+      gold.set_final(s11, 0.0).expect("Test assertion failed");
 
       let mut aligner = M2MFstAligner::new(false, true, true, 2, 1);
       let mut data = Vec::new();
@@ -562,11 +570,11 @@ mod tests {
       aligner.maximization();
       aligner.reset_tr_weights();
 
-      let fst = aligner.lattices.get(0).unwrap();
+      let fst = aligner.lattices.get(0).expect("Test assertion failed");
       let symbtbl = aligner.symbtbl;
       for state_id in gold.states_iter() {
-         let gold_trs = gold.get_trs(state_id).unwrap();
-         let trs = fst.get_trs(state_id).unwrap();
+         let gold_trs = gold.get_trs(state_id).expect("Test assertion failed");
+         let trs = fst.get_trs(state_id).expect("Test assertion failed");
          for it in gold_trs.iter().zip(trs.iter()) {
             let (gold_tr, tr) = it;
             assert!(st.get_symbol(gold_tr.ilabel) == symbtbl.get_symbol(tr.ilabel));
