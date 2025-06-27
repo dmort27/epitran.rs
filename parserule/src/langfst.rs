@@ -1,6 +1,8 @@
 use std::collections::HashSet;
+// Explicitly import Arc to avoid conflicts
 use std::sync::Arc;
 
+// Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::MutableFst;
 use rustfst::algorithms::{
