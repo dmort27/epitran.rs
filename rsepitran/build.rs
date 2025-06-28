@@ -25,10 +25,10 @@ fn main() -> Result<()> {
     }
     
     let mut generated_code = String::new();
-    generated_code.push_str("use std::collections::HashMap;\n");
-    generated_code.push_str("use std::sync::Arc;\n");
+    // generated_code.push_str("use std::collections::HashMap;\n");
+    // generated_code.push_str("use std::sync::Arc;\n");
     generated_code.push_str("use rustfst::prelude::*;\n");
-    generated_code.push_str("use rustfst::fst_impls::VectorFst;\n");
+    // generated_code.push_str("use rustfst::fst_impls::VectorFst;\n");
     generated_code.push_str("use once_cell::sync::Lazy;\n");
     generated_code.push_str("use parserule::langfst::build_lang_fst;\n\n");
     
