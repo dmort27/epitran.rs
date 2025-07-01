@@ -6,3 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+unicode-segmentation = "1.10"
+parserule = { path = "../parserule" }
+rustfst = "1.1.2"
+anyhow = "1.0.98"
+once_cell = "1.19"
+
+[build-dependencies]
+parserule = { path = "../parserule" }
+rustfst = "1.1.2"
+anyhow = "1.0.98"
+walkdir = "2.4"
