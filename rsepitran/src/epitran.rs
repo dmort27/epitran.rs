@@ -176,9 +176,11 @@ mod tests {
         let epitran = Epitran::new();
         
         // Test with first available language if any exist
-        if let Some(&lang) = epitran.available_languages().first() {
-            let result = epitran.transliterate_simple(lang, "test");
-            assert!(result.is_ok());
-        }
+        // if let Some(&lang) = epitran.available_languages().first() {
+        //     let result = epitran.transliterate_simple(lang, "test");
+        //     assert!(result.is_ok());
+        let result = epitran.transliterate_simple("spa_Latn", "oui");
+        assert!(result.is_ok());
+        // }
     }
 }

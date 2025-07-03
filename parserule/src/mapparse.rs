@@ -1,7 +1,7 @@
 use csv::Reader;
 use serde::Deserialize;
-use std::error::Error;
 use std::collections::HashSet;
+use std::error::Error;
 
 use crate::graphemeparse::get_graphemes;
 
@@ -18,7 +18,12 @@ pub struct ParsedMapping {
 
 pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), Box<dyn Error>> {
     let mut parsed_rules = Vec::new();
+    parsed_rules.push(ParsedMapping {
+        orth: vec!["#".to_string()],
+        phon: vec!["#".to_string()],
+    }); // Add word boundary symbols
     let mut syms: HashSet<String> = HashSet::new();
+    syms.insert("#".to_string()); // Add the super-final state symbol
 
     let mut reader = Reader::from_reader(data.as_bytes());
     for result in reader.deserialize() {
@@ -39,6 +44,8 @@ pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), 
         let parsed_mapping = ParsedMapping { orth, phon };
         parsed_rules.push(parsed_mapping);
     }
+    println!("parsed_rules={:?}", parsed_rules);
+    println!("syms={:?}", syms);
     Ok((syms, parsed_rules))
 }
 
@@ -66,7 +73,10 @@ mod tests {
                 phon: vec!["c".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).expect("Failed to process map data in test"), (syms, mapping));
+        assert_eq!(
+            process_map(data).expect("Failed to process map data in test"),
+            (syms, mapping)
+        );
     }
 
     #[test]
@@ -87,6 +97,9 @@ mod tests {
                 phon: vec!["ɐ".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).expect("Failed to process map data with unicode escapes in test"), (syms, mapping));
+        assert_eq!(
+            process_map(data).expect("Failed to process map data with unicode escapes in test"),
+            (syms, mapping)
+        );
     }
 }

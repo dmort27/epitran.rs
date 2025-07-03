@@ -3,23 +3,21 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 // Explicitly import VectorFst to avoid conflicts
-use rustfst::fst_impls::VectorFst;
-use rustfst::fst_traits::MutableFst;
-use rustfst::algorithms::{
-    add_super_final_state,
-    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
-    minimize_with_config, MinimizeConfig, push_weights,
-    rm_epsilon::rm_epsilon,
-    tr_sort, ReweightType,
-};
-use rustfst::prelude::*;
-use rustfst::prelude::{
-    compose::compose,
-    union::union,
-};
 use crate::mapparse::{process_map, ParsedMapping};
 use crate::rulefst::compile_script;
 use crate::ruleparse::parse_script;
+use crate::utils::optimize_fst;
+use rustfst::algorithms::{
+    add_super_final_state,
+    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
+    minimize_with_config, push_weights,
+    rm_epsilon::rm_epsilon,
+    tr_sort, MinimizeConfig, ReweightType,
+};
+use rustfst::fst_impls::VectorFst;
+use rustfst::fst_traits::MutableFst;
+use rustfst::prelude::*;
+use rustfst::prelude::{compose::compose, union::union};
 
 /// Build a wFST for a language using the preprocessing and postprocessing
 /// scripts and the mapping table.
@@ -39,13 +37,16 @@ pub fn build_lang_fst<'a>(
         println!("{e}: Could not parse mapping file.");
         (HashSet::new(), Vec::new())
     });
-    let (preproc_ast, preproc_syms) = parse_script(preproc)?;
-    let (postproc_ast, postproc_syms) = parse_script(postproc)?;
+    let (_, (preproc_ast, preproc_syms)) = parse_script(preproc)?;
+    let (_, (postproc_ast, postproc_syms)) = parse_script(postproc)?;
 
-    let mut syms = HashSet::new();
-    syms.extend(&map_syms);
-    syms.extend(&preproc_syms);
-    syms.extend(&postproc_syms);
+    println!("==> preproc_ast={:?}", preproc_ast);
+    println!("==> postproc_ast={:?}", postproc_ast);
+
+    let mut syms = HashSet::from(["#".to_string()]); // Add the super-final state symbol
+    syms.extend(map_syms);
+    syms.extend(preproc_syms);
+    syms.extend(postproc_syms);
 
     let mut symt_inner = SymbolTable::new();
     symt_inner.add_symbol("#");
@@ -53,8 +54,14 @@ pub fn build_lang_fst<'a>(
     let symt = Arc::new(symt_inner);
 
     let mut preproc_fst = compile_script(symt.clone(), preproc_ast)?;
+    // optimize_fst(&mut preproc_fst, 1.0e-5)?;
     let mut postproc_fst = compile_script(symt.clone(), postproc_ast)?;
+    // optimize_fst(&mut postproc_fst, 1.0e-5)?;
     let mut mapping_fst = compile_mapping_fst(symt.clone(), mapping)?;
+    // optimize_fst(&mut mapping_fst, 1.0e-5)?;
+
+    // println!("--> preproc_fst={:?}", preproc_fst);
+    // println!("--> postproc_fst={:?}", postproc_fst);
 
     tr_sort(&mut preproc_fst, OLabelCompare {});
     tr_sort(&mut mapping_fst, ILabelCompare {});
@@ -64,12 +71,15 @@ pub fn build_lang_fst<'a>(
     tr_sort(&mut postproc_fst, ILabelCompare {});
     let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
 
-    rm_epsilon(&mut composed_fst).unwrap_or_else(|e| {
-        eprintln!("Warning: Could not remove epsilon transitions from composed FST: {}", e);
-    });
-    top_sort(&mut composed_fst)
-        .unwrap_or_else(|e| println!("{e}: Could not sort topologically. There is cycle"));
-    // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
+    // rm_epsilon(&mut composed_fst).unwrap_or_else(|e| {
+    //     eprintln!(
+    //         "Warning: Could not remove epsilon transitions from composed FST: {}",
+    //         e
+    //     );
+    // });
+    // top_sort(&mut composed_fst)
+    //     .unwrap_or_else(|e| println!("{e}: Could not sort topologically. There is cycle"));
+    // // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
 
     Ok((symt, composed_fst))
 }
@@ -91,11 +101,11 @@ fn compile_mapping_fst(
         for (i, o) in m.orth.iter().zip(m.phon.iter()) {
             let next = transducer_fst.add_state();
             let ilabel = symt.get_label(i).unwrap_or_else(|| {
-                eprintln!("Warning: Symbol '{}' is unknown, using epsilon", i);
+                println!("Warning: Symbol '{i}' is unknown, using epsilon");
                 0
             });
             let olabel = symt.get_label(o).unwrap_or_else(|| {
-                eprintln!("Warning: Symbol '{}' is unknown, using epsilon", o);
+                println!("Warning: Symbol '{o}' is unknown, using epsilon");
                 0
             });
             transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next)?;
@@ -111,22 +121,31 @@ fn compile_mapping_fst(
     //         let _ = fst.emplace_tr(q0, l, l, 1.0, q0);
     //     }
     // });
-    rm_epsilon(&mut fst).unwrap_or_else(|e| {
-        eprintln!("Warning: Could not remove epsilon transitions from mapping FST: {}", e);
-    });
-    let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
-        &fst,
-        DeterminizeConfig {
-            delta: 1e-6,
-            det_type: DeterminizeType::DeterminizeFunctional,
-        },
-    )?;
-    push_weights(&mut fst, ReweightType::ReweightToInitial)?;
-    minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
+    // rm_epsilon(&mut fst).unwrap_or_else(|e| {
+    //     eprintln!(
+    //         "Warning: Could not remove epsilon transitions from mapping FST: {}",
+    //         e
+    //     );
+    // });
+    // let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
+    //     &fst,
+    //     DeterminizeConfig {
+    //         delta: 1e-6,
+    //         det_type: DeterminizeType::DeterminizeNonFunctional,
+    //     },
+    // )?;
+    // push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+    // minimize_with_config(
+    //     &mut fst,
+    //     MinimizeConfig {
+    //         delta: 1e-7,
+    //         allow_nondet: (true),
+    //     },
+    // )?;
 
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    
+
     // Optional FST visualization - only if debug mode and external tools available
     #[cfg(debug_assertions)]
     {
@@ -161,16 +180,120 @@ fn compile_mapping_fst(
 
 #[cfg(test)]
 mod test {
+
     use crate::{langfst::build_lang_fst, rulefst::apply_fst};
+
 
     #[test]
     fn test_build_lang_fst1() {
         let pre_str = "a -> b / c_d";
-        let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d";
+        let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d\n";
         let post_str = "c -> d / _d";
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
-        let input = "acad";
-        assert_eq!(apply_fst(symt, fst, input.to_string()), "acdd".to_string())
+        let input = "#acad#";
+        assert_eq!(apply_fst(symt, fst, input.to_string()), "#acdd#".to_string())
+    }
+
+    #[test]
+    fn test_build_lang_just_mapping() {
+        let pre_str = "";
+        let mapping_str = "orth,phon\na,a\nl,l\nn,n\ng,g\nng,ŋ\n";
+        let post_str = "";
+        let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
+            .expect("Failed to build language FST in test");
+        let input = "#ngalngal#";
+        assert_eq!(apply_fst(symt, fst, input.to_string()), "#ŋalŋal#".to_string())
+    }
+
+    #[test]
+    fn test_build_lang_pre_mapping_post() {
+        let pre_str = "ng -> ŋ / _ a";
+        let mapping_str = "orth,phon\nŋ,ŋ\na,a\nl,l\nn,n\ng,g\n";
+        let post_str = "l -> r / _ ŋ";
+        let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
+            .expect("Failed to build language FST in test");
+        let input = "#ngalngal#";
+        assert_eq!(apply_fst(symt, fst, input.to_string()), "#ŋarŋal#".to_string())
+    }
+
+    const MAP: &str = r#"orth,phon
+a,a
+n,n,
+g,g
+l,l
+ng,ŋ"#;
+
+    const MAP2: &str = r#"orth,phon
+i,i
+e,e
+u,u
+o,o
+a,a
+̂,ʔ
+-,ʔ
+',ʔ
+m,m
+p,p
+b,b
+n,n
+t,t
+d,d
+s,s
+l,l
+r,ɾ
+c,k
+ch,t͡ʃ
+ty,t͡ʃ
+ts,t͡ʃ
+j,d͡ʒ
+dy,d͡ʒ
+y,j
+ng,ŋ
+k,k
+g,ɡ
+w,w
+h,h
+"#;
+
+    const PRE: &str = r##"
+::vowel:: = (a|e|i|o|u)
+
+% Palatalization
+di -> d͡ʒ / _ ::vowel::
+ti -> t͡ʃ / _ ::vowel::
+ni -> nʲ / _ ::vowel::
+li -> lʲ / _ ::vowel::
+
+% Devocalization
+u -> w / _ ::vowel::
+i -> j / _ ::vowel::
+% u -> w / _ ::vowel::
+"##;
+
+    const PRE2: &str = r##"
+::vowel:: = (a|e|i|o|u)
+
+% Devocalization
+
+i -> j / _ ::vowel::
+u -> w / _ ::vowel::
+
+
+"##;
+
+    const POST: &str = r##"
+"##;
+
+
+    #[test]
+    fn test_build_realistic_lang_fst1() {
+        let (symt, fst) =
+            build_lang_fst(PRE, POST, MAP).expect("Failed to build language FST in test");
+        let input = "#ngalngal#";
+        assert_eq!(
+            apply_fst(symt, fst, input.to_string()),
+            "#ŋalŋal#".to_string()
+        )
     }
 }

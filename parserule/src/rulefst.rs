@@ -6,9 +6,15 @@
 use anyhow::Result;
 use rustfst::algorithms::compose::compose;
 use rustfst::algorithms::{
-    add_super_final_state, closure::closure, concat::concat, minimize_with_config, MinimizeConfig, push_weights,
-    rm_epsilon::rm_epsilon, tr_sort, union::union, ReweightType,
+    add_super_final_state,
+    closure::{closure, ClosureType},
+    concat::concat,
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
+    minimize_with_config, push_weights,
+    rm_epsilon::rm_epsilon,
+    tr_sort,
+    union::union,
+    MinimizeConfig, ReweightType,
 };
 // Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
@@ -25,6 +31,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
+use crate::utils::optimize_fst;
 
 #[derive(Debug, Clone, Copy)]
 enum LabelColor {
@@ -88,20 +95,27 @@ pub fn compile_script(
                         )
                     })
                     .unwrap_or(VectorFst::<TropicalWeight>::new());
+                optimize_fst(&mut fst, 1e-7).unwrap_or(());
                 tr_sort(&mut fst, OLabelCompare {});
                 tr_sort(&mut fst2, ILabelCompare {});
                 fst = compose(fst.clone(), fst2)?;
-                rm_epsilon(&mut fst).unwrap_or_else(|e| {
-                    eprintln!("Warning: Could not remove epsilon transitions from rule FST: {}", e);
-                });
+                // rm_epsilon(&mut fst).unwrap_or_else(|e| {
+                //     println!("Warning: Could not remove epsilons from rule FST: {}", e);
+                // });
                 // let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
                 //     &fst,
-                //     DeterminizeConfig { 
+                //     DeterminizeConfig {
                 //         delta: 1e-6,
                 //         det_type: DeterminizeType::DeterminizeFunctional
                 //     })?;
-                push_weights(&mut fst, ReweightType::ReweightToInitial)?;
-                minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
+                // push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+                // minimize_with_config(
+                //     &mut fst,
+                //     MinimizeConfig {
+                //         delta: 1e-7,
+                //         allow_nondet: (true),
+                //     },
+                // )?;
             }
         }
     }
@@ -142,8 +156,22 @@ fn rule_fst(
         output_to_epsilons(node_fst(symt.clone(), macros, rule.source)?);
     let tgt_fst: VectorFst<TropicalWeight> =
         input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
-    let left_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.left)?;
-    let right_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.right)?;
+    let left_fst = match rule.left {
+        RegexAST::Epsilon => {
+            let mut inner_fst = universal_acceptor(symt.clone())?;
+            closure(&mut inner_fst, ClosureType::ClosureStar);
+            inner_fst
+        }
+        _ => node_fst(symt.clone(), macros, rule.left)?,
+    };
+    let right_fst = match rule.right {
+        RegexAST::Epsilon => {
+            let mut inner_fst = universal_acceptor(symt.clone())?;
+            closure(&mut inner_fst, ClosureType::ClosureStar);
+            inner_fst
+        }
+        _ => node_fst(symt.clone(), macros, rule.right)?,
+    };
     let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
 
     concat(&mut fst, &left_fst)?;
@@ -190,8 +218,16 @@ fn rule_fst(
     //     .spawn()
     //     .expect("Could not open \"root_fst.pdf\".");
 
-    rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
-    minimize_with_config(&mut root, MinimizeConfig { delta: 1e-7, allow_nondet: (true) }).unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
+    // rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
+    // minimize_with_config(
+    //     &mut root,
+    //     MinimizeConfig {
+    //         delta: 1e-7,
+    //         allow_nondet: (true),
+    //     },
+    // )?;
+    // .unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
+    optimize_fst(&mut root, 1e-6).unwrap_or(());
 
     Ok(root)
 }
@@ -305,7 +341,10 @@ fn node_fst(
             fst2.emplace_tr(q1, 0, 0, TropicalWeight::zero(), q1)?;
             for s in class.iter() {
                 let l = symt.get_label(s).unwrap_or_else(|| {
-                    eprintln!("Warning: Symbol '{}' is not in symbol table, using epsilon", s);
+                    eprintln!(
+                        "Warning: Symbol '{}' is not in symbol table, using epsilon",
+                        s
+                    );
                     0
                 });
                 fst2.emplace_tr(q0, l, l, TropicalWeight::one(), q1)?;
@@ -372,17 +411,24 @@ fn node_fst(
         RegexAST::Comment => (),
     }
 
-    rm_epsilon(&mut fst).unwrap_or_else(|e| {
-        eprintln!("Warning: Could not remove epsilon transitions: {}", e);
-    });
-    let mut fst = determinize_with_config(
-        &fst,
-        DeterminizeConfig { 
-            delta: 1e-6,
-            det_type: DeterminizeType::DeterminizeFunctional
-        })?;
-    push_weights(&mut fst, ReweightType::ReweightToInitial)?;
-    minimize_with_config(&mut fst, MinimizeConfig { delta: 1e-7, allow_nondet: (true) })?;
+    // rm_epsilon(&mut fst).unwrap_or_else(|e| {
+    //     eprintln!("Warning: Could not remove epsilon transitions: {}", e);
+    // });
+    // let mut fst = determinize_with_config(
+    //     &fst,
+    //     DeterminizeConfig {
+    //         delta: 1e-6,
+    //         det_type: DeterminizeType::DeterminizeFunctional,
+    //     },
+    // )?;
+    // push_weights(&mut fst, ReweightType::ReweightToInitial)?;
+    // minimize_with_config(
+    //     &mut fst,
+    //     MinimizeConfig {
+    //         delta: 1e-7,
+    //         allow_nondet: (true),
+    //     },
+    // )?;
 
     Ok(fst)
 }
@@ -405,7 +451,10 @@ pub fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
     // println!("start state={:?}", fst.start());
     match fst.start() {
         Some(s) => stack.push((Action::Enter, s)),
-        _ => panic!("wFST lacks a start state. Aborting."),
+        None => {
+            eprintln!("wFST lacks start state. Assuming 0.");
+            stack.push((Action::Enter, 0));
+        }
     }
     let mut state = vec![LabelColor::White; fst.num_states()];
     while !stack.is_empty() {
@@ -480,6 +529,8 @@ pub fn apply_fst_to_string(
     acc.set_symts_from_fst(&fst);
     // println!("acc={:?}", acc);
     // println!("fst={:?}", fst);
+
+    optimize_fst(&mut fst, 1e-6).unwrap();
 
     tr_sort(&mut acc, OLabelCompare {});
     tr_sort(&mut fst, ILabelCompare {});
@@ -584,7 +635,7 @@ mod tests {
 
     #[test]
     fn test_compile_script_basic() {
-        let (script, syms) = parse_script("::seg:: = [abcdefghijklmnopqrstuvwxyzñ']\n[1234] -> {14} / #(::seg::)+ _ \n[23] -> {4} / _ ").expect("Failed to parse script in test");
+        let (_, (script, syms)) = parse_script("::seg:: = [abcdefghijklmnopqrstuvwxyzñ']\n[1234] -> {14} / #(::seg::)+ _ \n[23] -> {4} / _ ").expect("Failed to parse script in test");
         let mut inner_symt = symt!["#"];
         inner_symt.add_symbols(syms);
         let symt = Arc::new(inner_symt);
@@ -600,7 +651,7 @@ mod tests {
     #[test]
     fn test_compile_script_basic_with_comment() {
         let symt = Arc::new(symt!["p", "b", "a", "i"]);
-        let (script, _syms) = parse_script(
+        let (_, (script, _syms)) = parse_script(
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
         .expect("Failed to parse script in test");
@@ -613,7 +664,8 @@ mod tests {
     fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) = rule(rule_str).expect("Failed to parse rule in test");
-        let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule).expect("Failed to create rule FST in test");
+        let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule)
+            .expect("Failed to create rule FST in test");
         assert_eq!(
             apply_fst(symt.clone(), fst, input.to_string()),
             output.to_string()
@@ -715,7 +767,8 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -744,7 +797,8 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -758,7 +812,8 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule("p -> b / a _ a").expect("Failed to parse rule in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule("p -> b / a _ a").expect("Failed to parse rule in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -775,7 +830,8 @@ mod tests {
         // let symt = unicode_symbol_table();
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule("p -> b / a _ a").expect("Failed to parse rule in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule("p -> b / a _ a").expect("Failed to parse rule in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
@@ -791,7 +847,8 @@ mod tests {
     fn test_rule_disjunction() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule("(p|b) -> i / a _ ").expect("Failed to parse rule in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule("(p|b) -> i / a _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
@@ -804,7 +861,8 @@ mod tests {
     fn test_rule_class() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule("a -> i / [pb] _ ").expect("Failed to parse rule in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule("a -> i / [pb] _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
@@ -817,7 +875,8 @@ mod tests {
     fn test_rule_complement_class() {
         let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
-        let (_, (rewrite_rule, _syms)) = rule("a -> i / [^pb] _ ").expect("Failed to parse rule in test");
+        let (_, (rewrite_rule, _syms)) =
+            rule("a -> i / [^pb] _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
             rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
         assert_eq!(
@@ -830,10 +889,13 @@ mod tests {
     fn test_concat() {
         let mut fst1 = VectorFst::<TropicalWeight>::new();
         let q0 = fst1.add_state();
-        fst1.set_start(q0).expect("Failed to set start state in test");
+        fst1.set_start(q0)
+            .expect("Failed to set start state in test");
         let q1 = fst1.add_state();
-        fst1.set_final(q1, 0.0).expect("Failed to set final state in test");
-        fst1.emplace_tr(q0, 0, 0, 0.0, q1).expect("Failed to add transition in test");
+        fst1.set_final(q1, 0.0)
+            .expect("Failed to set final state in test");
+        fst1.emplace_tr(q0, 0, 0, 0.0, q1)
+            .expect("Failed to add transition in test");
         let fst2: VectorFst<TropicalWeight> = fst![1 => 2; 0.0];
         concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
         assert_eq!(fst1, fst![0, 0, 1 => 0, 0, 2; 0.0])
@@ -843,10 +905,13 @@ mod tests {
     fn test_rm_epsilon() {
         let mut fst1 = VectorFst::<TropicalWeight>::new();
         let q0 = fst1.add_state();
-        fst1.set_start(q0).expect("Failed to set start state in test");
+        fst1.set_start(q0)
+            .expect("Failed to set start state in test");
         let q1 = fst1.add_state();
-        fst1.set_final(q1, 0.0).expect("Failed to set final state in test");
-        fst1.emplace_tr(q0, 0, 0, 0.0, q1).expect("Failed to add transition in test");
+        fst1.set_final(q1, 0.0)
+            .expect("Failed to set final state in test");
+        fst1.emplace_tr(q0, 0, 0, 0.0, q1)
+            .expect("Failed to add transition in test");
         let fst2: VectorFst<TropicalWeight> = fst![1, 3 => 2, 4; 0.0];
         concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
         rm_epsilon(&mut fst1).expect("Failed to remove epsilon transitions in test");
@@ -861,6 +926,9 @@ mod tests {
         let mut fst: VectorFst<TropicalWeight> = fst![4 => 4; 0.0];
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
-        assert_eq!(node_fst(symt, &macros, input).expect("Failed to create node FST in test"), fst);
+        assert_eq!(
+            node_fst(symt, &macros, input).expect("Failed to create node FST in test"),
+            fst
+        );
     }
 }
