@@ -1,18 +1,16 @@
 use std::collections::HashSet;
 
-use anyhow::Result;
-
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{
-        alpha1, char as nom_char, line_ending, multispace0, newline, none_of, not_line_ending,
+        alpha1, char as nom_char, multispace0, newline, none_of,
         one_of, space0,
     },
     combinator::{map_res, recognize, success, value},
-    multi::{many0, many1, separated_list0, separated_list1},
+    multi::{many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
-    Err, IResult, Parser,
+    IResult, Parser,
 };
 use std::char;
 
@@ -46,8 +44,6 @@ pub struct RewriteRule {
     pub source: RegexAST,
     pub target: RegexAST,
 }
-
-type ParseError<'a> = Err<nom::error::Error<&'a str>>;
 
 fn character(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let (input, c) = none_of(" />_()[]-|*+^#:%\\\n\r")(input)?;
@@ -224,10 +220,6 @@ fn comment(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
         pair(nom_char('%'), is_not("\n")),
     )
     .parse(input)
-}
-
-fn blank_line(input: &str) -> IResult<&str, (Statement, HashSet<String>)> {
-    value((Statement::Comment, HashSet::new()), multispace0).parse(input)
 }
 
 fn re_mac_def(input: &str) -> IResult<&str, (String, RegexAST, HashSet<String>)> {
@@ -886,31 +878,31 @@ mod tests {
 
     #[test]
     fn test_parsable_by_statement_comment1() {
-        let (input, output) = comment_statement("% This is a comment").expect("Could not parse");
+        let (input, _) = comment_statement("% This is a comment").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 
     #[test]
     fn test_parsable_by_statement_rule1() {
-        let (input, output) = rule_statement("a -> b").expect("Could not parse");
+        let (input, _) = rule_statement("a -> b").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 
     #[test]
     fn test_parsable_by_statement_rule2() {
-        let (input, output) = rule_statement("a -> b / c _ d").expect("Could not parse");
+        let (input, _) = rule_statement("a -> b / c _ d").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 
     #[test]
     fn test_parsable_by_statement_rule_with_macro1() {
-        let (input, output) = rule_statement("a -> b / ::vowel:: _ d").expect("Could not parse");
+        let (input, _) = rule_statement("a -> b / ::vowel:: _ d").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 
     #[test]
     fn test_parsable_by_statement_macro_def1() {
-        let (input, output) = macro_statement("::vowel:: = (a|e|i|o|u)").expect("Could not parse");
+        let (input, _) = macro_statement("::vowel:: = (a|e|i|o|u)").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 

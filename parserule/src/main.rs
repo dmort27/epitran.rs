@@ -1,31 +1,7 @@
 use parserule::langfst::build_lang_fst;
-use parserule::rulefst::{apply_fst, rule_fst};
-use parserule::ruleparse::{rule, RegexAST};
-use rustfst::fst_impls::VectorFst;
-use rustfst::prelude::*;
-use std::collections::HashMap;
-use std::sync::Arc;
-
-fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
-    let macros: &HashMap<String, RegexAST> = &HashMap::new();
-    let (_, (rewrite_rule, _syms)) = rule(rule_str).expect("Failed to parse rule in test");
-    let mut fst: VectorFst<TropicalWeight> =
-        rule_fst(symt.clone(), macros, rewrite_rule).expect("Failed to create rule FST in test");
-    // 1optimize_fst(&mut fst, 1e-5).expect("Could not optimize FST in test");
-    assert_eq!(
-        apply_fst(symt.clone(), fst, input.to_string()),
-        output.to_string()
-    )
-}
+use parserule::rulefst::{apply_fst};
 
 const MAP: &str = r#"orth,phon
-a,a
-n,n,
-g,g
-l,l
-ng,ŋ"#;
-
-const MAP2: &str = r#"orth,phon
 i,i
 e,e
 u,u
@@ -72,27 +48,62 @@ i -> j / _ ::vowel::
 % u -> w / _ ::vowel::
 "##;
 
-const PRE2: &str = r##"
-::vowel:: = (a|e|i|o|u)
-
-% Devocalization
-
-i -> j / _ ::vowel::
-u -> w / _ ::vowel::
-
-
-"##;
 
 const POST: &str = r##"
 "##;
 
 fn test_build_realistic_lang_fst1() {
     let (symt, fst) = build_lang_fst(PRE, POST, MAP).expect("Failed to build language FST in test");
-    let input = "#ngalngal#";
-    assert_eq!(
-        apply_fst(symt, fst, input.to_string()),
-        "#ŋalŋal#".to_string()
-    )
+    let pairs: Vec<(&str, &str)> = vec![
+            ("#ngalngal#", "#ŋalŋal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+            ("#ngalngal#", "#ŋalɠal#"),
+            ("#dino#", "#d͡ʒino#"),
+            ("#iato#", "#jato#"),
+            ("#lia#", "#lʲa#"),
+            ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ];
+        for (itoken, otoken) in pairs {
+            assert_eq!(apply_fst(symt.clone(), fst.clone(), itoken.to_string()), otoken.to_string());
+        }
 }
 
 fn main() {

@@ -9,10 +9,7 @@ use crate::ruleparse::parse_script;
 use crate::utils::optimize_fst;
 use rustfst::algorithms::{
     add_super_final_state,
-    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
-    minimize_with_config, push_weights,
-    rm_epsilon::rm_epsilon,
-    tr_sort, MinimizeConfig, ReweightType,
+    tr_sort,
 };
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::MutableFst;
@@ -54,11 +51,11 @@ pub fn build_lang_fst<'a>(
     let symt = Arc::new(symt_inner);
 
     let mut preproc_fst = compile_script(symt.clone(), preproc_ast)?;
-    // optimize_fst(&mut preproc_fst, 1.0e-5)?;
+    optimize_fst(&mut preproc_fst, 1.0e-5)?;
     let mut postproc_fst = compile_script(symt.clone(), postproc_ast)?;
-    // optimize_fst(&mut postproc_fst, 1.0e-5)?;
+    optimize_fst(&mut postproc_fst, 1.0e-5)?;
     let mut mapping_fst = compile_mapping_fst(symt.clone(), mapping)?;
-    // optimize_fst(&mut mapping_fst, 1.0e-5)?;
+    optimize_fst(&mut mapping_fst, 1.0e-5)?;
 
     // println!("--> preproc_fst={:?}", preproc_fst);
     // println!("--> postproc_fst={:?}", postproc_fst);
@@ -69,7 +66,7 @@ pub fn build_lang_fst<'a>(
 
     tr_sort(&mut composed_fst, OLabelCompare {});
     tr_sort(&mut postproc_fst, ILabelCompare {});
-    let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
+    let composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
 
     // rm_epsilon(&mut composed_fst).unwrap_or_else(|e| {
     //     eprintln!(
@@ -228,13 +225,6 @@ mod test {
     }
 
     const MAP: &str = r#"orth,phon
-a,a
-n,n,
-g,g
-l,l
-ng,ŋ"#;
-
-    const MAP2: &str = r#"orth,phon
 i,i
 e,e
 u,u
@@ -281,17 +271,6 @@ i -> j / _ ::vowel::
 % u -> w / _ ::vowel::
 "##;
 
-    const PRE2: &str = r##"
-::vowel:: = (a|e|i|o|u)
-
-% Devocalization
-
-i -> j / _ ::vowel::
-u -> w / _ ::vowel::
-
-
-"##;
-
     const POST: &str = r##"
 "##;
 
@@ -303,6 +282,6 @@ u -> w / _ ::vowel::
         assert_eq!(
             apply_fst(symt, fst, input.to_string()),
             "#ŋalŋal#".to_string()
-        )
+        );
+        }
     }
-}

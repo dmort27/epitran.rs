@@ -9,12 +9,8 @@ use rustfst::algorithms::{
     add_super_final_state,
     closure::{closure, ClosureType},
     concat::concat,
-    determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
-    minimize_with_config, push_weights,
-    rm_epsilon::rm_epsilon,
     shortest_path, tr_sort,
     union::union,
-    MinimizeConfig, ReweightType,
 };
 // Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
@@ -536,7 +532,7 @@ pub fn apply_fst_to_string(
     tr_sort(&mut fst, ILabelCompare {});
 
     // Compose input automaton with the rule FST
-    let mut composed_fst = compose(acc, fst)?;
+    let composed_fst = compose(acc, fst)?;
 
     // Optionally, optimize the composed FST if you will decode paths or apply further operations
     // optimize_fst(&mut composed_fst, 1e-6).unwrap_or(());
@@ -659,6 +655,7 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustfst::algorithms::rm_epsilon::rm_epsilon;
     use crate::ruleparse::{parse_script, rule, rule_no_env};
 
     #[test]
@@ -692,7 +689,7 @@ mod tests {
     fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) = rule(rule_str).expect("Failed to parse rule in test");
-        let mut fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule)
+        let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule)
             .expect("Failed to create rule FST in test");
         // 1optimize_fst(&mut fst, 1e-5).expect("Could not optimize FST in test");
         assert_eq!(
