@@ -16,6 +16,7 @@ Cargo.lock
 rsepitran/map_fst.dot
 rsepitran/map_fst.pdf
 .gitignore
+parserule/.DS_Store
 parserule/cargo-flamegraph/
 parserule/cargo-flamegraph.trace/form.template
 parserule/cargo-flamegraph.trace/open.creq
