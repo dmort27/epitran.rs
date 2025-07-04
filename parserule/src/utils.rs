@@ -1,8 +1,8 @@
 use rustfst::algorithms::{
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
-    minimize_with_config, MinimizeConfig,
-    push_weights_with_config, PushWeightsConfig,
+    minimize_with_config, push_weights_with_config,
     rm_epsilon::rm_epsilon,
+    MinimizeConfig, PushWeightsConfig,
 };
 use rustfst::fst_impls::VectorFst;
 use rustfst::prelude::*;
@@ -12,19 +12,19 @@ pub fn optimize_fst(
     delta: f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     rm_epsilon(fst)?;
-    let mut det_fst = determinize_with_config(
-        fst,
-        DeterminizeConfig {
-            delta,
-            det_type: DeterminizeType::DeterminizeNonFunctional,
-        },
-    )?;
+    // let mut det_fst = determinize_with_config(
+    //     fst,
+    //     DeterminizeConfig {
+    //         delta,
+    //         det_type: DeterminizeType::DeterminizeNonFunctional,
+    //     },
+    // )?;
+    // minimize_with_config(fst, MinimizeConfig { delta: delta, allow_nondet: true })?;
     push_weights_with_config(
-        &mut det_fst,
+        fst,
         ReweightType::ReweightToInitial,
-        PushWeightsConfig::default()
+        PushWeightsConfig::default(),
     )?;
-    minimize_with_config(&mut det_fst, MinimizeConfig { delta: delta, allow_nondet: true })?;
-    *fst = det_fst;
+    // *fst = det_fst;
     Ok(())
 }

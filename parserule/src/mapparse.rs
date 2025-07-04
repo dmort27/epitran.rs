@@ -58,8 +58,17 @@ mod tests {
     #[test]
     fn test_process_data() {
         let data = "orth,phon\na,a\nb,b\nab,c\n";
-        let syms = HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()]);
+        let syms = HashSet::from([
+            "#".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]);
         let mapping = vec![
+            ParsedMapping {
+                orth: vec!["#".to_string()],
+                phon: vec!["#".to_string()],
+            },
             ParsedMapping {
                 orth: vec!["a".to_string()],
                 phon: vec!["a".to_string()],
@@ -82,8 +91,17 @@ mod tests {
     #[test]
     fn test_process_data_with_uni_esc() {
         let data = "orth,phon\na,a\nb,b\nab,\\u0250\n";
-        let syms = HashSet::from(["a".to_string(), "b".to_string(), "ɐ".to_string()]);
+        let syms = HashSet::from([
+            "#".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "ɐ".to_string(),
+        ]);
         let mapping = vec![
+            ParsedMapping {
+                orth: vec!["#".to_string()],
+                phon: vec!["#".to_string()],
+            },
             ParsedMapping {
                 orth: vec!["a".to_string()],
                 phon: vec!["a".to_string()],

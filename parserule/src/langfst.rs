@@ -112,7 +112,9 @@ fn compile_mapping_fst(
             last = next;
         }
         transducer_fst.set_final(last, 0.0)?;
+        optimize_fst(&mut transducer_fst, 1e-5)?;
         union(&mut fst, &transducer_fst)?;
+        optimize_fst(&mut fst, 1e-5)?;
     }
     let qn = add_super_final_state(&mut fst);
     fst.emplace_tr(qn, 0, 0, 1.0, q0)?;
@@ -183,7 +185,6 @@ mod test {
 
     use crate::{langfst::build_lang_fst, rulefst::apply_fst};
 
-
     #[test]
     fn test_build_lang_fst1() {
         let pre_str = "a -> b / c_d";
@@ -192,7 +193,10 @@ mod test {
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#acad#";
-        assert_eq!(apply_fst(symt, fst, input.to_string()), "#acdd#".to_string())
+        assert_eq!(
+            apply_fst(symt, fst, input.to_string()),
+            "#acdd#".to_string()
+        )
     }
 
     #[test]
@@ -203,7 +207,10 @@ mod test {
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#ngalngal#";
-        assert_eq!(apply_fst(symt, fst, input.to_string()), "#ŋalŋal#".to_string())
+        assert_eq!(
+            apply_fst(symt, fst, input.to_string()),
+            "#ŋalŋal#".to_string()
+        )
     }
 
     #[test]
@@ -214,7 +221,10 @@ mod test {
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#ngalngal#";
-        assert_eq!(apply_fst(symt, fst, input.to_string()), "#ŋarŋal#".to_string())
+        assert_eq!(
+            apply_fst(symt, fst, input.to_string()),
+            "#ŋarŋal#".to_string()
+        )
     }
 
     const MAP: &str = r#"orth,phon
@@ -284,7 +294,6 @@ u -> w / _ ::vowel::
 
     const POST: &str = r##"
 "##;
-
 
     #[test]
     fn test_build_realistic_lang_fst1() {

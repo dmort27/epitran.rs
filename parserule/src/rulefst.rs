@@ -12,7 +12,7 @@ use rustfst::algorithms::{
     determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType},
     minimize_with_config, push_weights,
     rm_epsilon::rm_epsilon,
-    tr_sort,
+    shortest_path, tr_sort,
     union::union,
     MinimizeConfig, ReweightType,
 };
@@ -134,7 +134,7 @@ pub fn compile_script(
 /// # Returns
 ///
 /// A WFST corresponding to a rewrite rule
-fn rule_fst(
+pub fn rule_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     rule: RewriteRule,
@@ -524,23 +524,25 @@ pub fn apply_fst_to_string(
     mut fst: VectorFst<TropicalWeight>,
     input: String,
 ) -> Result<VectorFst<TropicalWeight>> {
-    let symt: Arc<SymbolTable> = symt.clone();
-    let mut acc = string_to_linear_automaton(symt, &input);
+    // Convert input string to a linear automaton
+    let mut acc = string_to_linear_automaton(symt.clone(), &input);
     acc.set_symts_from_fst(&fst);
-    // println!("acc={:?}", acc);
-    // println!("fst={:?}", fst);
 
-    optimize_fst(&mut fst, 1e-6).unwrap();
+    // Optimize the rule FST before composition
+    optimize_fst(&mut fst, 1e-6).unwrap_or(());
 
+    // Sort transitions for efficient composition
     tr_sort(&mut acc, OLabelCompare {});
     tr_sort(&mut fst, ILabelCompare {});
 
-    let composed_fst: VectorFst<TropicalWeight> = compose(acc, fst)?;
-    // println!("composed_fst={:?}", composed_fst);
+    // Compose input automaton with the rule FST
+    let mut composed_fst = compose(acc, fst)?;
+
+    // Optionally, optimize the composed FST if you will decode paths or apply further operations
+    // optimize_fst(&mut composed_fst, 1e-6).unwrap_or(());
 
     Ok(composed_fst)
 }
-
 /// Decode each of the paths through the output labels of a wFST as a vector of (weight, string) tuples
 ///
 /// # Examples
@@ -611,21 +613,47 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 /// let input = "aba".to_string();
 /// assert_eq!(apply_fst(symt, fst, input), "cdc".to_string());
 /// ```
+// pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
+//     let composed_fst = apply_fst_to_string(symt.clone(), fst.clone(), input.clone())
+//         .unwrap_or_else(|e| {
+//             println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
+//             VectorFst::<TropicalWeight>::new()
+//         });
+//     if is_cyclic(&composed_fst) {
+//         panic!("Transducer resulting from applying composing input string was cyclic.")
+//     }
+//     let outputs = decode_paths_through_fst(symt.clone(), composed_fst);
+//     if let Some((_, best_string)) = outputs.first() {
+//         best_string.clone()
+//     } else {
+//         "".to_string()
+//     }
+// }
 pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
-    let composed_fst = apply_fst_to_string(symt.clone(), fst.clone(), input.clone())
-        .unwrap_or_else(|e| {
+    let mut composed_fst: VectorFst<TropicalWeight> =
+        apply_fst_to_string(symt.clone(), fst.clone(), input.clone()).unwrap_or_else(|e| {
             println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
             VectorFst::<TropicalWeight>::new()
         });
     if is_cyclic(&composed_fst) {
         panic!("Transducer resulting from applying composing input string was cyclic.")
-    }
-    let outputs = decode_paths_through_fst(symt.clone(), composed_fst);
-    if let Some((_, best_string)) = outputs.first() {
-        best_string.clone()
-    } else {
-        "".to_string()
-    }
+    };
+    composed_fst.set_input_symbols(symt.clone());
+    composed_fst.set_output_symbols(symt.clone());
+
+    let shortest: VectorFst<TropicalWeight> = shortest_path(&composed_fst).unwrap();
+
+    shortest
+        .string_paths_iter()
+        .unwrap()
+        .collect::<Vec<StringPath<TropicalWeight>>>()[0]
+        .olabels()
+        .iter()
+        .map(|l| symt.get_symbol(*l).unwrap_or_else(|| {
+            eprintln!("Label {l} not found in Symbol Table while decoding path. Using empty string.");
+            ""
+        }))
+        .collect::<String>()
 }
 
 #[cfg(test)]
@@ -664,8 +692,9 @@ mod tests {
     fn evaluate_rule(symt: Arc<SymbolTable>, rule_str: &str, input: &str, output: &str) {
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) = rule(rule_str).expect("Failed to parse rule in test");
-        let fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule)
+        let mut fst: VectorFst<TropicalWeight> = rule_fst(symt.clone(), macros, rewrite_rule)
             .expect("Failed to create rule FST in test");
+        // 1optimize_fst(&mut fst, 1e-5).expect("Could not optimize FST in test");
         assert_eq!(
             apply_fst(symt.clone(), fst, input.to_string()),
             output.to_string()
@@ -675,7 +704,7 @@ mod tests {
     #[test]
     fn test_kleene_star1() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "cddda",
             "cdddb",
@@ -685,7 +714,7 @@ mod tests {
     #[test]
     fn test_kleene_star2() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ca",
             "cb",
@@ -695,7 +724,7 @@ mod tests {
     #[test]
     fn test_kleene_star3() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd* _ ",
             "ddda",
             "ddda",
@@ -705,7 +734,7 @@ mod tests {
     #[test]
     fn test_kleene_plus3() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "cda",
             "cdb",
@@ -715,7 +744,7 @@ mod tests {
     #[test]
     fn test_kleene_plus4() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd+ _ ",
             "ca",
             "ca",
@@ -725,7 +754,7 @@ mod tests {
     #[test]
     fn test_kleene_plus5() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdcda",
             "cdcdcdb",
@@ -735,7 +764,7 @@ mod tests {
     #[test]
     fn test_kleene_plus6() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / (cd)+ _ ",
             "cdcdca",
             "cdcdca",
@@ -745,7 +774,7 @@ mod tests {
     #[test]
     fn test_option1() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd? _ ",
             "cda",
             "cdb",
@@ -755,7 +784,7 @@ mod tests {
     #[test]
     fn test_option2() {
         evaluate_rule(
-            Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]),
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
             "a -> b / cd? _ ",
             "ca",
             "cb",
@@ -765,7 +794,7 @@ mod tests {
     #[test]
     fn test_simple_rule() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
+        let symt = Arc::new(symt!["#", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
@@ -795,7 +824,7 @@ mod tests {
     #[test]
     fn test_multiple_application() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "e"]);
+        let symt = Arc::new(symt!["#", "a", "e"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
@@ -810,7 +839,7 @@ mod tests {
     #[test]
     fn test_rule_with_context() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
+        let symt = Arc::new(symt!["#", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule("p -> b / a _ a").expect("Failed to parse rule in test");
@@ -828,7 +857,7 @@ mod tests {
     #[test]
     fn test_multiple_application_with_context() {
         // let symt = unicode_symbol_table();
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p"]);
+        let symt = Arc::new(symt!["#", "a", "b", "p"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule("p -> b / a _ a").expect("Failed to parse rule in test");
@@ -845,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_rule_disjunction() {
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule("(p|b) -> i / a _ ").expect("Failed to parse rule in test");
@@ -859,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_rule_class() {
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule("a -> i / [pb] _ ").expect("Failed to parse rule in test");
@@ -873,7 +902,7 @@ mod tests {
 
     #[test]
     fn test_rule_complement_class() {
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "p", "i"]);
+        let symt = Arc::new(symt!["#", "a", "b", "p", "i"]);
         let macros: &HashMap<String, RegexAST> = &HashMap::new();
         let (_, (rewrite_rule, _syms)) =
             rule("a -> i / [^pb] _ ").expect("Failed to parse rule in test");
@@ -916,19 +945,5 @@ mod tests {
         concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
         rm_epsilon(&mut fst1).expect("Failed to remove epsilon transitions in test");
         assert_eq!(fst1, fst![1, 3 => 2, 4; 0.0])
-    }
-
-    #[test]
-    fn test_node_fst() {
-        let symt = Arc::new(symt!["#", "<g>", "</g>", "a", "b", "c", "d"]);
-        let macros: HashMap<String, RegexAST> = HashMap::new();
-        let input = RegexAST::Char('a');
-        let mut fst: VectorFst<TropicalWeight> = fst![4 => 4; 0.0];
-        fst.set_input_symbols(symt.clone());
-        fst.set_output_symbols(symt.clone());
-        assert_eq!(
-            node_fst(symt, &macros, input).expect("Failed to create node FST in test"),
-            fst
-        );
     }
 }
