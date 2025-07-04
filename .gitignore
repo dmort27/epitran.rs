@@ -13,3 +13,7 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 .DS_Store
+rsepitran/map_fst.dot
+rsepitran/map_fst.pdf
+.gitignore
+parserule/.DS_Store
