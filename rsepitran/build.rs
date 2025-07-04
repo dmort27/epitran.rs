@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 use walkdir::WalkDir;
 use anyhow::{Result, Context};
-use parserule::langfst::build_lang_fst;
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=data/");
