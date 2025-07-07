@@ -15,6 +15,8 @@ Cargo.lock
 .DS_Store
 rsepitran/map_fst.dot
 rsepitran/map_fst.pdf
+rsepitran/src/map_fst.dot
+rsepitran/src/map_fst.pdf
 .gitignore
 parserule/.DS_Store
 parserule/cargo-flamegraph/
@@ -224,3 +226,4 @@ parserule/cargo-flamegraph.trace/symbols/stores/05344457-BD89-3B9D-89E2-5A6B3DE3
 parserule/cargo-flamegraph.trace/symbols/stores/C62596FE-63C5-3502-BBD1-14147A7CA921.symbolsarchive
 parserule/cargo-flamegraph.trace/symbols/stores/E2C4CBE4-6195-3328-B87C-2DFA4A6AD039.symbolsarchive
 parserule/cargo-flamegraph.trace/symbols/stores/F7E5BDDC-FB12-33EF-921F-C93FEF0D41D7.symbolsarchive
+rsepitran/data/map/map_fst.dot
