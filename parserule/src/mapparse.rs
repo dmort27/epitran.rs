@@ -16,7 +16,7 @@ pub struct ParsedMapping {
     pub phon: Vec<String>,
 }
 
-pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), Box<dyn Error>> {
+pub fn process_map(data: String) -> Result<(HashSet<String>, Vec<ParsedMapping>), Box<dyn Error>> {
     let mut parsed_rules = Vec::new();
     parsed_rules.push(ParsedMapping {
         orth: vec!["#".to_string()],
@@ -83,7 +83,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            process_map(data).expect("Failed to process map data in test"),
+            process_map(data.to_string()).expect("Failed to process map data in test"),
             (syms, mapping)
         );
     }
@@ -116,7 +116,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            process_map(data).expect("Failed to process map data with unicode escapes in test"),
+            process_map(data.to_string()).expect("Failed to process map data with unicode escapes in test"),
             (syms, mapping)
         );
     }

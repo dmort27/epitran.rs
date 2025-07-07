@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use colored::Colorize;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -363,7 +364,7 @@ fn macro_statement(input: &str) -> IResult<&str, (Statement, HashSet<String>)> {
     Ok((input, (Statement::MacroDef((name, re)), set)))
 }
 
-pub fn parse_script(input: &str) -> IResult<&str, (Vec<Statement>, HashSet<String>)> {
+pub fn parse_script(input: &str) -> IResult<String, (Vec<Statement>, HashSet<String>)> {
     let mut parser = tuple((
         multispace0,
         separated_list0(
@@ -372,14 +373,18 @@ pub fn parse_script(input: &str) -> IResult<&str, (Vec<Statement>, HashSet<Strin
         ),
         multispace0,
     ));
-    let (input, (_, statements_and_sets, _)) = parser.parse(input)?;
+    let (input, (_, statements_and_sets, _)) = parser.parse(input)
+        .unwrap_or_else(|e| {
+            println!("{e}: {}", "Parser error!".red());
+            ("", ("", Vec::<(Statement, HashSet<String>)>::new(), ""))
+        });
     let mut union_of_sets = HashSet::new();
     for (_, set) in statements_and_sets.iter() {
         union_of_sets.extend(set);
     }
     let union_of_sets: HashSet<String> = union_of_sets.iter().map(|s| s.to_string()).collect();
     let statements = statements_and_sets.into_iter().map(|(st, _)| st).collect();
-    Ok((input, (statements, union_of_sets)))
+    Ok((input.to_string(), (statements, union_of_sets)))
 }
 
 // pub fn parse_script<'a>(
@@ -747,7 +752,7 @@ mod tests {
         debug_assert_eq!(
             parse_script("a -> b / c _ d\nb -> p / _ #"),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![
                         Statement::Rule(RewriteRule {
@@ -774,7 +779,7 @@ mod tests {
         debug_assert_eq!(
             parse_script("::vowel:: = (a|b|c|d)"),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![Statement::MacroDef((
                         "vowel".to_string(),
@@ -796,7 +801,7 @@ mod tests {
         debug_assert_eq!(
             parse_script("::letter:: = (a|b|c|d)\na -> b / c _ ::letter::"),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![
                         Statement::MacroDef((
@@ -911,7 +916,7 @@ mod tests {
         debug_assert_eq!(
             parse_script("::vowel:: = (a|e|i|o|u)\n% Comment\nu -> w / _ ::vowel::"),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![
                         Statement::MacroDef((
@@ -943,7 +948,7 @@ mod tests {
         debug_assert_eq!(
             parse_script("::vowel:: = (a|e|i|o|u)\n \n u -> w / _ ::vowel::\n"),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![
                         Statement::MacroDef((
@@ -979,7 +984,7 @@ mod tests {
 u -> w / _ ::vowel::"##
             ),
             Ok((
-                "",
+                "".to_string(),
                 (
                     vec![
                         Statement::MacroDef((
