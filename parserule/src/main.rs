@@ -1,6 +1,8 @@
 use parserule::langfst::build_lang_fst;
 use parserule::rulefst::{apply_fst};
 
+use clap::{Parser, Subcommand};
+
 const MAP: &str = r#"orth,phon
 i,i
 e,e
@@ -53,7 +55,7 @@ const POST: &str = r##"
 "##;
 
 fn test_build_realistic_lang_fst1() {
-    let (symt, fst) = build_lang_fst(PRE, POST, MAP).expect("Failed to build language FST in test");
+    let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string()).expect("Failed to build language FST in test");
     let pairs: Vec<(&str, &str)> = vec![
             ("#ngalngal#", "#ŋalŋal#"),
             ("#dino#", "#d͡ʒino#"),
