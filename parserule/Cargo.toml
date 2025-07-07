@@ -20,6 +20,12 @@ anyhow.workspace = true
 itertools = "0.14.0"
 csv = "1.3"
 serde = { version = "1.0", features = ["derive"] }
+colored = "3.0.0"
+clap = { version = "4.5.40", features = ["derive"] }
 
 [profile.release]
 debug = true
+
+[[bin]]
+name = "parse_script"
+path = "src/main.rs"
