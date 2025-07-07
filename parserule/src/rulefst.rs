@@ -26,6 +26,8 @@ use std::collections::HashMap;
 // Explicitly import Arc to avoid conflicts
 use std::sync::Arc;
 
+use colored::Colorize;
+
 use crate::ruleparse::{RegexAST, RewriteRule, Statement};
 use crate::utils::optimize_fst;
 
@@ -86,8 +88,7 @@ pub fn compile_script(
                 let mut fst2 = rule_fst(symt.clone(), &macros, rule.clone())
                     .inspect_err(|e| {
                         println!(
-                            "Failed to build rule {:?} having macros {:?}: {}",
-                            rule, macros, e
+                            "Failed to build rule {:?} having macros {:?}: {}", rule, macros, e
                         )
                     })
                     .unwrap_or(VectorFst::<TropicalWeight>::new());
@@ -135,8 +136,7 @@ pub fn rule_fst(
     macros: &HashMap<String, RegexAST>,
     rule: RewriteRule,
 ) -> Result<VectorFst<TropicalWeight>> {
-    println!("--- rule={:?}", rule);
-
+    
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -339,7 +339,7 @@ fn node_fst(
                 let l = symt.get_label(s).unwrap_or_else(|| {
                     eprintln!(
                         "Warning: Symbol '{}' is not in symbol table, using epsilon",
-                        s
+                        s.red()
                     );
                     0
                 });
@@ -448,7 +448,7 @@ pub fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
     match fst.start() {
         Some(s) => stack.push((Action::Enter, s)),
         None => {
-            eprintln!("wFST lacks start state. Assuming 0.");
+            eprintln!("{}", "wFST lacks start state. Assuming 0.".red());
             stack.push((Action::Enter, 0));
         }
     }
@@ -517,19 +517,18 @@ pub fn string_to_linear_automaton(symt: Arc<SymbolTable>, s: &str) -> VectorFst<
 /// ```
 pub fn apply_fst_to_string(
     symt: Arc<SymbolTable>,
-    mut fst: VectorFst<TropicalWeight>,
+    fst: VectorFst<TropicalWeight>,
     input: String,
 ) -> Result<VectorFst<TropicalWeight>> {
     // Convert input string to a linear automaton
     let mut acc = string_to_linear_automaton(symt.clone(), &input);
     acc.set_symts_from_fst(&fst);
 
-    // Optimize the rule FST before composition
-    optimize_fst(&mut fst, 1e-6).unwrap_or(());
-
     // Sort transitions for efficient composition
     tr_sort(&mut acc, OLabelCompare {});
-    tr_sort(&mut fst, ILabelCompare {});
+
+    // We should assume that `fst` is already sorted by output labels.
+    // tr_sort(&mut fst, ILabelCompare {});
 
     // Compose input automaton with the rule FST
     let composed_fst = compose(acc, fst)?;
@@ -680,7 +679,6 @@ mod tests {
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
         .expect("Failed to parse script in test");
-        println!("script={:?}", script);
         let fst = compile_script(symt.clone(), script).expect("Failed to compile script in test");
         let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
         assert_eq!(result, "abbppi".to_string());
