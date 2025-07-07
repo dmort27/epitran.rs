@@ -25,17 +25,17 @@ use rustfst::prelude::{compose::compose, union::union};
 /// converting each of these strings into a wFST, then composing them. A
 /// `SymbolTable` `symt` is generated, based on characters and Unicode escapes
 /// found in the strings. This is also returned.
-pub fn build_lang_fst<'a>(
-    preproc: &'a str,
-    postproc: &'a str,
-    mapping: &'a str,
-) -> Result<(Arc<SymbolTable>, VectorFst<TropicalWeight>), Box<dyn std::error::Error + 'a>> {
+pub fn build_lang_fst(
+    preproc: String,
+    postproc: String,
+    mapping: String,
+) -> Result<(Arc<SymbolTable>, VectorFst<TropicalWeight>), Box<dyn std::error::Error>> {
     let (map_syms, mapping) = process_map(mapping).unwrap_or_else(|e| {
         println!("{e}: Could not parse mapping file.");
         (HashSet::new(), Vec::new())
     });
-    let (_, (preproc_ast, preproc_syms)) = parse_script(preproc)?;
-    let (_, (postproc_ast, postproc_syms)) = parse_script(postproc)?;
+    let (_, (preproc_ast, preproc_syms)) = parse_script(&preproc)?;
+    let (_, (postproc_ast, postproc_syms)) = parse_script(&postproc)?;
 
     println!("==> preproc_ast={:?}", preproc_ast);
     println!("==> postproc_ast={:?}", postproc_ast);
@@ -66,7 +66,7 @@ pub fn build_lang_fst<'a>(
 
     tr_sort(&mut composed_fst, OLabelCompare {});
     tr_sort(&mut postproc_fst, ILabelCompare {});
-    let composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
+    let mut composed_fst: VectorFst<TropicalWeight> = compose(composed_fst, postproc_fst)?;
 
     // rm_epsilon(&mut composed_fst).unwrap_or_else(|e| {
     //     eprintln!(
@@ -77,6 +77,9 @@ pub fn build_lang_fst<'a>(
     // top_sort(&mut composed_fst)
     //     .unwrap_or_else(|e| println!("{e}: Could not sort topologically. There is cycle"));
     // // let mut composed_fst = determinize_with_config(&composed_fst, DeterminizeConfig { delta: 1e-6, det_type: DeterminizeType::DeterminizeNonFunctional })?;
+
+    // Sort `composed_fst` by the input labels because an acceptor will be composed with it.
+    tr_sort(&mut composed_fst, ILabelCompare {});
 
     Ok((symt, composed_fst))
 }
@@ -184,9 +187,9 @@ mod test {
 
     #[test]
     fn test_build_lang_fst1() {
-        let pre_str = "a -> b / c_d";
-        let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d\n";
-        let post_str = "c -> d / _d";
+        let pre_str = "a -> b / c_d".to_string();
+        let mapping_str = "orth,phon\na,a\nb,c\nc,c\nd,d\n".to_string();
+        let post_str = "c -> d / _d".to_string();
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#acad#";
@@ -198,9 +201,9 @@ mod test {
 
     #[test]
     fn test_build_lang_just_mapping() {
-        let pre_str = "";
-        let mapping_str = "orth,phon\na,a\nl,l\nn,n\ng,g\nng,ŋ\n";
-        let post_str = "";
+        let pre_str = "".to_string();
+        let mapping_str = "orth,phon\na,a\nl,l\nn,n\ng,g\nng,ŋ\n".to_string();
+        let post_str = "".to_string();
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#ngalngal#";
@@ -212,9 +215,9 @@ mod test {
 
     #[test]
     fn test_build_lang_pre_mapping_post() {
-        let pre_str = "ng -> ŋ / _ a";
-        let mapping_str = "orth,phon\nŋ,ŋ\na,a\nl,l\nn,n\ng,g\n";
-        let post_str = "l -> r / _ ŋ";
+        let pre_str = "ng -> ŋ / _ a".to_string();
+        let mapping_str = "orth,phon\nŋ,ŋ\na,a\nl,l\nn,n\ng,g\n".to_string();
+        let post_str = "l -> r / _ ŋ".to_string();
         let (symt, fst) = build_lang_fst(pre_str, post_str, mapping_str)
             .expect("Failed to build language FST in test");
         let input = "#ngalngal#";
@@ -277,7 +280,7 @@ i -> j / _ ::vowel::
     #[test]
     fn test_build_realistic_lang_fst1() {
         let (symt, fst) =
-            build_lang_fst(PRE, POST, MAP).expect("Failed to build language FST in test");
+            build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string()).expect("Failed to build language FST in test");
         let input = "#ngalngal#";
         assert_eq!(
             apply_fst(symt, fst, input.to_string()),
