@@ -1,7 +1,5 @@
 use parserule::langfst::build_lang_fst;
-use parserule::rulefst::{apply_fst};
-
-use clap::{Parser, Subcommand};
+use parserule::rulefst::apply_fst;
 
 const MAP: &str = r#"orth,phon
 i,i
@@ -50,62 +48,65 @@ i -> j / _ ::vowel::
 % u -> w / _ ::vowel::
 "##;
 
-
 const POST: &str = r##"
 "##;
 
 fn test_build_realistic_lang_fst1() {
-    let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string()).expect("Failed to build language FST in test");
+    let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string())
+        .expect("Failed to build language FST in test");
     let pairs: Vec<(&str, &str)> = vec![
-            ("#ngalngal#", "#ŋalŋal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-            ("#ngalngal#", "#ŋalɠal#"),
-            ("#dino#", "#d͡ʒino#"),
-            ("#iato#", "#jato#"),
-            ("#lia#", "#lʲa#"),
-            ("#tyatya#", "#t͡ʃat͡ʃa#"),
-        ];
-        for (itoken, otoken) in pairs {
-            assert_eq!(apply_fst(symt.clone(), fst.clone(), itoken.to_string()), otoken.to_string());
-        }
+        ("#ngalngal#", "#ŋalŋal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+        ("#ngalngal#", "#ŋalɠal#"),
+        ("#dino#", "#d͡ʒino#"),
+        ("#iato#", "#jato#"),
+        ("#lia#", "#lʲa#"),
+        ("#tyatya#", "#t͡ʃat͡ʃa#"),
+    ];
+    for (itoken, otoken) in pairs {
+        assert_eq!(
+            apply_fst(symt.clone(), fst.clone(), itoken.to_string()),
+            otoken.to_string()
+        );
+    }
 }
 
 fn main() {
