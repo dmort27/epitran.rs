@@ -11,6 +11,15 @@ use std::error::Error;
 
 use clap::Parser;
 
+use tabled::{settings::Style, Table, Tabled};
+
+#[derive(Tabled)]
+struct Prediction {
+    input: String,
+    predicted: String,
+    reference: String,
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -37,9 +46,32 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     // Read map file
-    let mapping: String = read_to_string(cli.map).unwrap();
-    let preproc: String = read_to_string(cli.preproc).unwrap();
-    let postproc: String = read_to_string(cli.postproc).unwrap();
+    let mapping: String = read_to_string(cli.map.clone()).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            format!("{e}: Cannot open file '{}'.", cli.map).bold().red()
+        );
+        std::process::exit(1);
+    });
+    // println!("{mapping}");
+    let preproc: String = read_to_string(cli.preproc.clone()).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            format!("{e}: Cannot open file '{}'.", cli.preproc)
+                .bold()
+                .red()
+        );
+        std::process::exit(1);
+    });
+    let postproc: String = read_to_string(cli.postproc.clone()).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            format!("{e}: Cannot open file '{}'.", cli.postproc)
+                .bold()
+                .red()
+        );
+        std::process::exit(1);
+    });
 
     println!("{}", "Compiling wFST...".blue());
 
@@ -47,17 +79,44 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("{}", "Successfully compiled wFST".bold().green());
 
-    let mut reader = Reader::from_reader(cli.testcases.as_bytes());
-    for result in reader.deserialize() {
+    let mut predictions: Vec<Prediction> = Vec::new();
+
+    // Read test cases file
+    let testcases_content: String = read_to_string(cli.testcases.clone()).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            format!("{e}: Cannot open file '{}'.", cli.testcases)
+                .bold()
+                .red()
+        );
+        std::process::exit(1);
+    });
+
+    let mut reader = Reader::from_reader(testcases_content.as_bytes());
+    let deserialized = reader.deserialize();
+    for result in deserialized {
         let record: TestCase = result?;
-        let prediction = apply_fst(symt.clone(), fst.clone(), record.input);
-        let analysis = if prediction == record.output {
-            format!("{} ({})", prediction.green(), record.output.purple())
+        let predicted_form = apply_fst(symt.clone(), fst.clone(), record.input.clone());
+        let input_form = record.input;
+        let reference_form = record.output.clone();
+        if predicted_form == record.output {
+            predictions.push(Prediction {
+                input: input_form,
+                predicted: format!("{}", predicted_form.green()),
+                reference: format!("{}", reference_form.purple()),
+            });
         } else {
-            format!("{} ({})", prediction.red(), record.output.purple())
+            predictions.push(Prediction {
+                input: input_form,
+                predicted: format!("{}", predicted_form.red()),
+                reference: format!("{}", reference_form.purple()),
+            });
         };
-        println!("{}", analysis);
     }
+
+    let mut table = Table::new(&predictions);
+    table.with(Style::sharp());
+    println!("{table}");
 
     Ok(())
 }
