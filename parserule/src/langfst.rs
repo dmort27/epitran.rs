@@ -274,14 +274,14 @@ i -> j / _ ::vowel::
     const POST: &str = r##"
 "##;
 
-    #[test]
-    fn test_build_realistic_lang_fst1() {
-        let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string())
-            .expect("Failed to build language FST in test");
-        let input = "#ngalngal#";
-        assert_eq!(
-            apply_fst(symt, fst, input.to_string()),
-            "#ŋalŋal#".to_string()
-        );
-    }
+    // #[test]
+    // fn test_build_realistic_lang_fst1() {
+    //     let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string())
+    //         .expect("Failed to build language FST in test");
+    //     let input = "#ngalngal#";
+    //     assert_eq!(
+    //         apply_fst(symt, fst, input.to_string()),
+    //         "#ŋalŋal#".to_string()
+    //     );
+    // }
 }

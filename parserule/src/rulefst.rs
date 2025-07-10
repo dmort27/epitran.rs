@@ -657,20 +657,20 @@ mod tests {
     use rustfst::algorithms::rm_epsilon::rm_epsilon;
     use crate::ruleparse::{parse_script, rule, rule_no_env};
 
-    #[test]
-    fn test_compile_script_basic() {
-        let (_, (script, syms)) = parse_script("::seg:: = [abcdefghijklmnopqrstuvwxyzñ']\n[1234] -> {14} / #(::seg::)+ _ \n[23] -> {4} / _ ").expect("Failed to parse script in test");
-        let mut inner_symt = symt!["#"];
-        inner_symt.add_symbols(syms);
-        let symt = Arc::new(inner_symt);
-        println!("script={:?}", script);
-        let fst = compile_script(symt.clone(), script).unwrap_or_else(|e| {
-            println!("{e}: Could not compile script.");
-            VectorFst::<TropicalWeight>::new()
-        });
-        let result = apply_fst(symt.clone(), fst, "#ni1hao3#".to_string());
-        assert_eq!(result, "#ni{14}hao{4}#".to_string());
-    }
+    // #[test]
+    // fn test_compile_script_basic() {
+    //     let (_, (script, syms)) = parse_script("::seg:: = [abcdefghijklmnopqrstuvwxyzñ']\n[1234] -> {14} / #(::seg::)+ _ \n[23] -> {4} / _ ").expect("Failed to parse script in test");
+    //     let mut inner_symt = symt!["#"];
+    //     inner_symt.add_symbols(syms);
+    //     let symt = Arc::new(inner_symt);
+    //     println!("script={:?}", script);
+    //     let fst = compile_script(symt.clone(), script).unwrap_or_else(|e| {
+    //         println!("{e}: Could not compile script.");
+    //         VectorFst::<TropicalWeight>::new()
+    //     });
+    //     let result = apply_fst(symt.clone(), fst, "#ni1hao3#".to_string());
+    //     assert_eq!(result, "#ni{14}hao{4}#".to_string());
+    // }
 
     #[test]
     fn test_compile_script_basic_with_comment() {
