@@ -7,10 +7,7 @@ use crate::mapparse::{process_map, ParsedMapping};
 use crate::rulefst::compile_script;
 use crate::ruleparse::parse_script;
 use crate::utils::optimize_fst;
-use rustfst::algorithms::{
-    add_super_final_state,
-    tr_sort,
-};
+use rustfst::algorithms::{add_super_final_state, tr_sort};
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::MutableFst;
 use rustfst::prelude::*;
@@ -279,12 +276,12 @@ i -> j / _ ::vowel::
 
     #[test]
     fn test_build_realistic_lang_fst1() {
-        let (symt, fst) =
-            build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string()).expect("Failed to build language FST in test");
+        let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string())
+            .expect("Failed to build language FST in test");
         let input = "#ngalngal#";
         assert_eq!(
             apply_fst(symt, fst, input.to_string()),
             "#ŋalŋal#".to_string()
         );
-        }
     }
+}

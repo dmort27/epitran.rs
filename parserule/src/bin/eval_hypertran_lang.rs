@@ -53,6 +53,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         std::process::exit(1);
     });
+    println!("mapping={mapping}");
+
     // println!("{mapping}");
     let preproc: String = read_to_string(cli.preproc.clone()).unwrap_or_else(|e| {
         eprintln!(
@@ -63,6 +65,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         std::process::exit(1);
     });
+    println!("preproc={preproc}");
+
     let postproc: String = read_to_string(cli.postproc.clone()).unwrap_or_else(|e| {
         eprintln!(
             "{}",
@@ -72,10 +76,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         std::process::exit(1);
     });
+    println!("postproc={postproc}");
 
     println!("{}", "Compiling wFST...".blue());
 
-    let (symt, fst) = build_lang_fst(mapping, preproc, postproc)?;
+    let (symt, fst) = build_lang_fst(preproc, postproc, mapping)?;
 
     println!("{}", "Successfully compiled wFST".bold().green());
 
@@ -91,6 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         std::process::exit(1);
     });
+    println!("testcases_content={testcases_content}");
 
     let mut reader = Reader::from_reader(testcases_content.as_bytes());
     let deserialized = reader.deserialize();

@@ -28,7 +28,7 @@ pub fn process_map(data: String) -> Result<(HashSet<String>, Vec<ParsedMapping>)
     let mut reader = Reader::from_reader(data.as_bytes());
     for result in reader.deserialize() {
         let record: Mapping = result.unwrap_or_else(|e| {
-            println!("{e}: Error reading CSV data.");
+            println!("{e}: Error reading CSV data for map files.");
             Mapping {
                 orth: "".to_string(),
                 phon: "".to_string(),
@@ -116,7 +116,8 @@ mod tests {
             },
         ];
         assert_eq!(
-            process_map(data.to_string()).expect("Failed to process map data with unicode escapes in test"),
+            process_map(data.to_string())
+                .expect("Failed to process map data with unicode escapes in test"),
             (syms, mapping)
         );
     }
