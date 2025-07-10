@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let mut generated_code = String::new();
     // generated_code.push_str("use std::collections::HashMap;\n");
     // generated_code.push_str("use std::sync::Arc;\n");
-    generated_code.push_str("use rustfst::prelude::*;\n");
+    // generated_code.push_str("use rustfst::prelude::*;\n");
     // generated_code.push_str("use rustfst::fst_impls::VectorFst;\n");
     generated_code.push_str("use once_cell::sync::Lazy;\n");
     generated_code.push_str("use parserule::langfst::build_lang_fst;\n\n");
@@ -46,12 +46,16 @@ fn main() -> Result<()> {
                 let pre_var = format!("PRE_DATA_{}", var_prefix);
                 let post_var = format!("POST_DATA_{}", var_prefix);
 
-                generated_code
-                    .push_str(&format!("static {}: &str = {:?};\n", map_var, map_content));
-                generated_code
-                    .push_str(&format!("static {}: &str = {:?};\n", pre_var, pre_content));
                 generated_code.push_str(&format!(
-                    "static {}: &str = {:?};\n",
+                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
+                    map_var, map_content
+                ));
+                generated_code.push_str(&format!(
+                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
+                    pre_var, pre_content
+                ));
+                generated_code.push_str(&format!(
+                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
                     post_var, post_content
                 ));
 
@@ -71,7 +75,7 @@ fn main() -> Result<()> {
     for (lang_code, map_var, pre_var, post_var) in &lang_data {
         let key = lang_code.replace("-", "_");
         generated_code.push_str(&format!(
-            "    println!(\"+++Building WFST for {}\");\n    if let Ok((symt, fst)) = build_lang_fst({}, {}, {}) {{\n",
+            "    println!(\"+++Building WFST for {}\");\n    if let Ok((symt, fst)) = build_lang_fst((*{}).clone(), (*{}).clone(), (*{}).clone()) {{\n",
             lang_code, pre_var, post_var, map_var
         ));
         generated_code.push_str(&format!(
