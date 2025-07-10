@@ -34,8 +34,8 @@ pub fn build_lang_fst(
     let (_, (preproc_ast, preproc_syms)) = parse_script(&preproc)?;
     let (_, (postproc_ast, postproc_syms)) = parse_script(&postproc)?;
 
-    println!("==> preproc_ast={:?}", preproc_ast);
-    println!("==> postproc_ast={:?}", postproc_ast);
+    println!("==> preproc_ast={preproc_ast:?}");
+    println!("==> postproc_ast={postproc_ast:?}");
 
     let mut syms = HashSet::from(["#".to_string()]); // Add the super-final state symbol
     syms.extend(map_syms);
@@ -148,7 +148,7 @@ fn compile_mapping_fst(
     // Optional FST visualization - only if debug mode and external tools available
     #[cfg(debug_assertions)]
     {
-        if let Ok(_) = fst.draw(
+        if fst.draw(
             "map_fst.dot",
             &DrawingConfig {
                 vertical: false,
@@ -162,14 +162,14 @@ fn compile_mapping_fst(
                 show_weight_one: (true),
                 print_weight: (true),
             },
-        ) {
+        ).is_ok() {
             // Only attempt to run dot if the file was created successfully
             // This is optional and won't fail the function if dot is not available
             if let Err(e) = std::process::Command::new("dot")
                 .args(["-Tpdf", "-o", "map_fst.pdf", "map_fst.dot"])
                 .output()
             {
-                eprintln!("Warning: Could not run dot command: {}", e);
+                eprintln!("Warning: Could not run dot command: {e}");
             }
         }
     }
@@ -224,6 +224,7 @@ mod test {
         )
     }
 
+    #[allow(dead_code)]
     const MAP: &str = r#"orth,phon
 i,i
 e,e
@@ -256,6 +257,7 @@ w,w
 h,h
 "#;
 
+    #[allow(dead_code)]
     const PRE: &str = r##"
 ::vowel:: = (a|e|i|o|u)
 
@@ -271,6 +273,7 @@ i -> j / _ ::vowel::
 % u -> w / _ ::vowel::
 "##;
 
+    #[allow(dead_code)]
     const POST: &str = r##"
 "##;
 

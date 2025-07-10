@@ -38,53 +38,48 @@ fn main() -> Result<()> {
     let mut lang_data = Vec::new();
 
     for lang_code in &lang_codes {
-        println!("\n+++ Building wFST for {}+++\n", lang_code);
+        println!("\n+++ Building wFST for {lang_code}+++\n");
         match get_language_data(lang_code) {
             Ok((map_content, pre_content, post_content)) => {
                 let var_prefix = lang_code.replace("-", "_").to_uppercase();
-                let map_var = format!("MAP_DATA_{}", var_prefix);
-                let pre_var = format!("PRE_DATA_{}", var_prefix);
-                let post_var = format!("POST_DATA_{}", var_prefix);
+                let map_var = format!("MAP_DATA_{var_prefix}");
+                let pre_var = format!("PRE_DATA_{var_prefix}");
+                let post_var = format!("POST_DATA_{var_prefix}");
 
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
-                    map_var, map_content
+                    "static {map_var}: Lazy<String> = Lazy::new(|| {map_content:?}.to_string());\n"
                 ));
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
-                    pre_var, pre_content
+                    "static {pre_var}: Lazy<String> = Lazy::new(|| {pre_content:?}.to_string());\n"
                 ));
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
-                    post_var, post_content
+                    "static {post_var}: Lazy<String> = Lazy::new(|| {post_content:?}.to_string());\n"
                 ));
 
                 lang_data.push((lang_code.clone(), map_var, pre_var, post_var));
                 successful_langs.push(lang_code.clone());
             }
             Err(e) => {
-                eprintln!("Warning: Failed to read data for {}: {}", lang_code, e);
+                eprintln!("Warning: Failed to read data for {lang_code}: {e}");
             }
         }
     }
 
-    // Generate the lazy static map that builds FSTs at runtime
-    generated_code.push_str("\npub static COMPILED_FSTS: Lazy<HashMap<String, (Arc<SymbolTable>, VectorFst<TropicalWeight>)>> = Lazy::new(|| {\n");
+    // Generate type alias and the lazy static map that builds FSTs at runtime
+    generated_code.push_str("\ntype CompiledFstMap = HashMap<String, (Arc<SymbolTable>, VectorFst<TropicalWeight>)>;\n\n");
+    generated_code.push_str("pub static COMPILED_FSTS: Lazy<CompiledFstMap> = Lazy::new(|| {\n");
     generated_code.push_str("    let mut map = HashMap::new();\n");
 
     for (lang_code, map_var, pre_var, post_var) in &lang_data {
         let key = lang_code.replace("-", "_");
         generated_code.push_str(&format!(
-            "    println!(\"+++Building WFST for {}\");\n    if let Ok((symt, fst)) = build_lang_fst((*{}).clone(), (*{}).clone(), (*{}).clone()) {{\n",
-            lang_code, pre_var, post_var, map_var
+            "    println!(\"+++Building WFST for {lang_code}\");\n    if let Ok((symt, fst)) = build_lang_fst((*{pre_var}).clone(), (*{post_var}).clone(), (*{map_var}).clone()) {{\n"
         ));
         generated_code.push_str(&format!(
-            "        map.insert(\"{}\".to_string(), (symt, fst));\n",
-            key
+            "        map.insert(\"{key}\".to_string(), (symt, fst));\n"
         ));
         generated_code.push_str(&format!(
-            "    }} else {{\n        eprintln!(\"Warning: Failed to build FST for {}\");\n    }}\n",
-            lang_code
+            "    }} else {{\n        eprintln!(\"Warning: Failed to build FST for {lang_code}\");\n    }}\n"
         ));
     }
 
@@ -95,7 +90,7 @@ fn main() -> Result<()> {
     generated_code.push_str("pub static AVAILABLE_LANGUAGES: &[&str] = &[\n");
     for lang_code in &successful_langs {
         let key = lang_code.replace("-", "_");
-        generated_code.push_str(&format!("    \"{}\",\n", key));
+        generated_code.push_str(&format!("    \"{key}\",\n"));
     }
     generated_code.push_str("];\n");
 
@@ -110,25 +105,21 @@ fn main() -> Result<()> {
 }
 
 fn extract_lang_code(filename: &str) -> Option<String> {
-    if let Some(stem) = filename.strip_suffix(".csv") {
-        Some(stem.to_string())
-    } else {
-        None
-    }
+    filename.strip_suffix(".csv").map(|stem| stem.to_string())
 }
 
 fn get_language_data(lang_code: &str) -> Result<(String, String, String)> {
     // Read map file (required)
-    let map_path = format!("data/map/{}.csv", lang_code);
+    let map_path = format!("data/map/{lang_code}.csv");
     let map_content = fs::read_to_string(&map_path)
-        .with_context(|| format!("Failed to read map file: {}", map_path))?;
+        .with_context(|| format!("Failed to read map file: {map_path}"))?;
 
     // Read pre file (optional)
-    let pre_path = format!("data/pre/{}.txt", lang_code);
+    let pre_path = format!("data/pre/{lang_code}.txt");
     let pre_content = fs::read_to_string(&pre_path).unwrap_or_default();
 
     // Read post file (optional)
-    let post_path = format!("data/post/{}.txt", lang_code);
+    let post_path = format!("data/post/{lang_code}.txt");
     let post_content = fs::read_to_string(&post_path).unwrap_or_default();
 
     Ok((map_content, pre_content, post_content))

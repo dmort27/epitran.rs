@@ -30,8 +30,7 @@ fn uni_esc(input: &str) -> IResult<&str, char> {
     let (input, num) = parser.parse(input)?;
     let c = std::char::from_u32(num).unwrap_or_else(|| {
         eprintln!(
-            "Warning: Invalid Unicode code point {}, using replacement character",
-            num
+            "Warning: Invalid Unicode code point {num}, using replacement character"
         );
         '\u{FFFD}' // Unicode replacement character
     });

@@ -9,13 +9,13 @@ fn main() {
 
     // Test transliteration with available languages
     for &lang in epitran.available_languages().iter().take(3) {
-        println!("\nTesting language: {}", lang);
+        println!("\nTesting language: {lang}");
 
         let test_words = ["hello", "world", "test"];
         for word in &test_words {
             match epitran.transliterate_simple(lang, word) {
-                Ok(result) => println!("  {} -> {}", word, result),
-                Err(e) => println!("  Error transliterating '{}': {}", word, e),
+                Ok(result) => println!("  {word} -> {result}"),
+                Err(e) => println!("  Error transliterating '{word}': {e}"),
             }
         }
     }

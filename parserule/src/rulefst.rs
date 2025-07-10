@@ -88,7 +88,7 @@ pub fn compile_script(
                 let mut fst2 = rule_fst(symt.clone(), &macros, rule.clone())
                     .inspect_err(|e| {
                         println!(
-                            "Failed to build rule {:?} having macros {:?}: {}", rule, macros, e
+                            "Failed to build rule {rule:?} having macros {macros:?}: {e}"
                         )
                     })
                     .unwrap_or(VectorFst::<TropicalWeight>::new());
@@ -461,7 +461,7 @@ pub fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
                 stack.push((Action::Exit, v));
                 for tr in fst
                     .get_trs(v)
-                    .unwrap_or_else(|e| panic!("State {} not present in wFST: {}", v, e))
+                    .unwrap_or_else(|e| panic!("State {v} not present in wFST: {e}"))
                     .iter()
                 {
                     let n = tr.nextstate;
@@ -557,7 +557,6 @@ pub fn apply_fst_to_string(
 /// fst.set_output_symbols(symt.clone());
 /// assert_eq!(decode_paths_through_fst(symt, fst), vec![(TropicalWeight::from(0.1), "cdc".to_string())]);
 /// ```
-
 pub fn decode_paths_through_fst(
     symt: Arc<SymbolTable>,
     mut fst: VectorFst<TropicalWeight>,
@@ -576,7 +575,7 @@ pub fn decode_paths_through_fst(
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
         .collect();
     outputs.sort_unstable_by(|(w1, _), (w2, _)| w1.partial_cmp(w2).unwrap_or(Ordering::Equal));
-    println!("\n*** outputs={:?}", outputs);
+    println!("\n*** outputs={outputs:?}");
     outputs
 }
 
@@ -627,7 +626,7 @@ fn decode_path(symt: Arc<SymbolTable>, path: StringPath<TropicalWeight>) -> Stri
 pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: String) -> String {
     let mut composed_fst: VectorFst<TropicalWeight> =
         apply_fst_to_string(symt.clone(), fst.clone(), input.clone()).unwrap_or_else(|e| {
-            println!("{e}: Couldn't apply wFST {:?} to string {:?}.", fst, input);
+            println!("{e}: Couldn't apply wFST {fst:?} to string {input:?}.");
             VectorFst::<TropicalWeight>::new()
         });
     if is_cyclic(&composed_fst) {

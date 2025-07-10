@@ -49,7 +49,7 @@ pub fn tokenize_by_whitespace(text: &str, boundary: &str) -> Vec<String> {
             if clean_token.is_empty() {
                 clean_token
             } else {
-                format!("{}{}{}", boundary, clean_token, boundary)
+                format!("{boundary}{clean_token}{boundary}")
             }
         })
         .filter(|token| !token.is_empty()) // Remove empty tokens
@@ -116,13 +116,12 @@ pub fn filter_by_symbols(input: &str, syms: &HashSet<String>) -> String {
         // Try to find the longest matching symbol starting at position i
         for j in (i + 1)..=input_chars.len() {
             let candidate: String = input_chars[i..j].iter().collect();
-            if syms.contains(&candidate) {
-                if candidate.len() > best_match_len {
+            if syms.contains(&candidate)
+                && candidate.len() > best_match_len {
                     best_match_len = candidate.len();
                     best_match = candidate;
                     matched = true;
                 }
-            }
         }
 
         if matched {
