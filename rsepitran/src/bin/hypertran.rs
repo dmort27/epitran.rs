@@ -1,5 +1,4 @@
-use rsepitran::{filter_by_symbols, tokenize_by_whitespace, Epitran};
-use std::collections::HashSet;
+use rsepitran::Epitran;
 
 fn main() {
     // Test the Epitran functionality
