@@ -8,12 +8,24 @@ edition = "2021"
 [dependencies]
 unicode-segmentation = "1.10"
 parserule = { path = "../parserule" }
-rustfst = "1.1.2"
-anyhow = "1.0.98"
+rustfst.workspace = true
+anyhow.workspace = true
+# rustfst = "1.1.2"
+# anyhow = "1.0.98"
 once_cell = "1.19"
+colored = "3.0.0"
+clap = { version = "4.5.40", features = ["derive"] }
 
 [build-dependencies]
 parserule = { path = "../parserule" }
-rustfst = "1.1.2"
-anyhow = "1.0.98"
+rustfst.workspace = true
+anyhow.workspace = true
+# rustfst = "1.1.2"
+# anyhow = "1.0.98"
 walkdir = "2.4"
+colored = "3.0.0"
+clap = { version = "4.5.40", features = ["derive"] }
+
+[[bin]]
+name = "hypertran"
+path = "src/bin/hypertran.rs"

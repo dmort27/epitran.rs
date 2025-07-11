@@ -1,7 +1,7 @@
 use csv::Reader;
 use serde::Deserialize;
-use std::error::Error;
 use std::collections::HashSet;
+use std::error::Error;
 
 use crate::graphemeparse::get_graphemes;
 
@@ -16,14 +16,19 @@ pub struct ParsedMapping {
     pub phon: Vec<String>,
 }
 
-pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), Box<dyn Error>> {
+pub fn process_map(data: String) -> Result<(HashSet<String>, Vec<ParsedMapping>), Box<dyn Error>> {
     let mut parsed_rules = Vec::new();
+    parsed_rules.push(ParsedMapping {
+        orth: vec!["#".to_string()],
+        phon: vec!["#".to_string()],
+    }); // Add word boundary symbols
     let mut syms: HashSet<String> = HashSet::new();
+    syms.insert("#".to_string()); // Add the super-final state symbol
 
     let mut reader = Reader::from_reader(data.as_bytes());
     for result in reader.deserialize() {
         let record: Mapping = result.unwrap_or_else(|e| {
-            println!("{e}: Error reading CSV data.");
+            println!("{e}: Error reading CSV data for map files.");
             Mapping {
                 orth: "".to_string(),
                 phon: "".to_string(),
@@ -39,6 +44,8 @@ pub fn process_map(data: &str) -> Result<(HashSet<String>, Vec<ParsedMapping>), 
         let parsed_mapping = ParsedMapping { orth, phon };
         parsed_rules.push(parsed_mapping);
     }
+    println!("parsed_rules={:?}", parsed_rules);
+    println!("syms={:?}", syms);
     Ok((syms, parsed_rules))
 }
 
@@ -51,8 +58,17 @@ mod tests {
     #[test]
     fn test_process_data() {
         let data = "orth,phon\na,a\nb,b\nab,c\n";
-        let syms = HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()]);
+        let syms = HashSet::from([
+            "#".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]);
         let mapping = vec![
+            ParsedMapping {
+                orth: vec!["#".to_string()],
+                phon: vec!["#".to_string()],
+            },
             ParsedMapping {
                 orth: vec!["a".to_string()],
                 phon: vec!["a".to_string()],
@@ -66,14 +82,26 @@ mod tests {
                 phon: vec!["c".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).expect("Failed to process map data in test"), (syms, mapping));
+        assert_eq!(
+            process_map(data.to_string()).expect("Failed to process map data in test"),
+            (syms, mapping)
+        );
     }
 
     #[test]
     fn test_process_data_with_uni_esc() {
         let data = "orth,phon\na,a\nb,b\nab,\\u0250\n";
-        let syms = HashSet::from(["a".to_string(), "b".to_string(), "ɐ".to_string()]);
+        let syms = HashSet::from([
+            "#".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+            "ɐ".to_string(),
+        ]);
         let mapping = vec![
+            ParsedMapping {
+                orth: vec!["#".to_string()],
+                phon: vec!["#".to_string()],
+            },
             ParsedMapping {
                 orth: vec!["a".to_string()],
                 phon: vec!["a".to_string()],
@@ -87,6 +115,10 @@ mod tests {
                 phon: vec!["ɐ".to_string(), "".to_string()],
             },
         ];
-        assert_eq!(process_map(data).expect("Failed to process map data with unicode escapes in test"), (syms, mapping));
+        assert_eq!(
+            process_map(data.to_string())
+                .expect("Failed to process map data with unicode escapes in test"),
+            (syms, mapping)
+        );
     }
 }
