@@ -44,7 +44,12 @@ pub fn build_lang_fst(
 
     let mut symt_inner = SymbolTable::new();
     symt_inner.add_symbol("#");
-    symt_inner.add_symbols(syms);
+    // Sort symbols to ensure deterministic order
+    let mut sorted_syms: Vec<String> = syms.into_iter().collect();
+    sorted_syms.sort();
+    for sym in sorted_syms {
+        symt_inner.add_symbol(sym);
+    }
     let symt = Arc::new(symt_inner);
 
     let mut preproc_fst = compile_script(symt.clone(), preproc_ast)?;
@@ -148,21 +153,24 @@ fn compile_mapping_fst(
     // Optional FST visualization - only if debug mode and external tools available
     #[cfg(debug_assertions)]
     {
-        if fst.draw(
-            "map_fst.dot",
-            &DrawingConfig {
-                vertical: false,
-                size: (Some((10.0, 10.0))),
-                title: ("Mapping FST".to_string()),
-                portrait: (true),
-                ranksep: (None),
-                nodesep: (None),
-                fontsize: (12),
-                acceptor: (false),
-                show_weight_one: (true),
-                print_weight: (true),
-            },
-        ).is_ok() {
+        if fst
+            .draw(
+                "map_fst.dot",
+                &DrawingConfig {
+                    vertical: false,
+                    size: (Some((10.0, 10.0))),
+                    title: ("Mapping FST".to_string()),
+                    portrait: (true),
+                    ranksep: (None),
+                    nodesep: (None),
+                    fontsize: (12),
+                    acceptor: (false),
+                    show_weight_one: (true),
+                    print_weight: (true),
+                },
+            )
+            .is_ok()
+        {
             // Only attempt to run dot if the file was created successfully
             // This is optional and won't fail the function if dot is not available
             if let Err(e) = std::process::Command::new("dot")

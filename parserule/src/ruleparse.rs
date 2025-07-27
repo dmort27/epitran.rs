@@ -5,8 +5,7 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{
-        alpha1, char as nom_char, multispace0, newline, none_of,
-        one_of, space0,
+        alpha1, char as nom_char, multispace0, newline, none_of, one_of, space0,
     },
     combinator::{map_res, recognize, success, value},
     multi::{many1, separated_list0, separated_list1},
@@ -62,9 +61,7 @@ fn uni_esc(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     );
     let (input, num) = parser.parse(input)?;
     let c = std::char::from_u32(num).unwrap_or_else(|| {
-        eprintln!(
-            "Warning: Invalid Unicode code point {num} in rule, using replacement character"
-        );
+        eprintln!("Warning: Invalid Unicode code point {num} in rule, using replacement character");
         '\u{FFFD}' // Unicode replacement character
     });
     let syms: HashSet<String> = HashSet::from([c.to_string()]);
@@ -131,6 +128,17 @@ fn sequence(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
         character,
     )));
     //let (input, elem:<(RegexAST, HashSet<String>) = parser.parse(input)?;
+    let (input, elems) = parser.parse(input)?;
+    let mut set = HashSet::new();
+    for (_, s) in elems.clone() {
+        set.extend(s.iter().cloned());
+    }
+    let g: Vec<RegexAST> = elems.iter().cloned().map(|(r, _)| r).collect();
+    Ok((input, (RegexAST::Group(g), set)))
+}
+
+fn string(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
+    let mut parser = many1(alt((epsilon_mark, characters)));
     let (input, elems) = parser.parse(input)?;
     let mut set = HashSet::new();
     for (_, s) in elems.clone() {
@@ -264,9 +272,9 @@ pub fn rule(input: &str) -> IResult<&str, (RewriteRule, HashSet<String>)> {
         input,
         ((source, src_set), _, (target, tgt_set), _, (left, left_set), _, (right, right_set), _),
     ) = tuple((
-        regex,
+        string,
         delimited(space0, tag("->"), space0),
-        regex,
+        string,
         delimited(space0, tag("/"), space0),
         regex,
         delimited(space0, tag("_"), space0),
@@ -372,11 +380,10 @@ pub fn parse_script(input: &str) -> IResult<String, (Vec<Statement>, HashSet<Str
         ),
         multispace0,
     ));
-    let (input, (_, statements_and_sets, _)) = parser.parse(input)
-        .unwrap_or_else(|e| {
-            println!("{e}: {}", "Parser error!".red());
-            ("", ("", Vec::<(Statement, HashSet<String>)>::new(), ""))
-        });
+    let (input, (_, statements_and_sets, _)) = parser.parse(input).unwrap_or_else(|e| {
+        println!("{e}: {}", "Parser error!".red());
+        ("", ("", Vec::<(Statement, HashSet<String>)>::new(), ""))
+    });
     let mut union_of_sets = HashSet::new();
     for (_, set) in statements_and_sets.iter() {
         union_of_sets.extend(set);
