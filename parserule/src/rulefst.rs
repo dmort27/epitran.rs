@@ -3,7 +3,7 @@
 
 // cSpell:disable
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use rustfst::algorithms::compose::compose;
 use rustfst::algorithms::{
     add_super_final_state,
@@ -15,13 +15,14 @@ use rustfst::algorithms::{
 // Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
+use rustfst::prelude::rm_epsilon::rm_epsilon;
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
 // use rustfst::DrawingConfig;
 use std::char;
 use std::cmp::Ordering;
 // Explicitly import HashMap to avoid conflicts
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 // use std::process::Command;
 // Explicitly import Arc to avoid conflicts
 use std::sync::Arc;
@@ -85,7 +86,7 @@ pub fn compile_script(
                 macros.insert(mac, def).unwrap_or(RegexAST::Epsilon);
             }
             Statement::Rule(rule) => {
-                let mut fst2 = rule_fst(symt.clone(), &macros, rule.clone())
+                let mut fst2 = mohri_sproat_rule_fst(symt.clone(), &macros, rule.clone())
                     .inspect_err(|e| {
                         println!(
                             "Failed to build rule {:?} having macros {:?}: {}", rule, macros, e
@@ -116,8 +117,198 @@ pub fn compile_script(
             }
         }
     }
+    println!("编译成功");
 
     Ok(fst)
+}
+
+pub fn mohri_sproat_rule_fst(
+    symt: Arc<SymbolTable>,
+    macros: &HashMap<String, RegexAST>,
+    rule: RewriteRule,
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut symt_ext = symt.as_ref().clone();
+    let rangle = symt_ext.add_symbol(">#");
+    let langle1 = symt_ext.add_symbol("<1#");
+    let langle2 = symt_ext.add_symbol("<2#");
+    let symt_ext_ref = Arc::new(symt_ext);
+
+    let rulestr = format!("{:?}", rule.clone());
+
+    let src_fst: VectorFst<TropicalWeight> =
+        node_fst(symt.clone(), macros, rule.source)?;
+    let tgt_fst: VectorFst<TropicalWeight> =
+        input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
+    let left_fst = match rule.left {
+        RegexAST::Epsilon => {
+            let mut inner_fst = universal_acceptor(symt.clone())?;
+            //closure(&mut inner_fst, ClosureType::ClosureStar);
+            inner_fst
+        }
+        _ => node_fst(symt.clone(), macros, rule.left)?,
+    };
+    let right_fst = match rule.right {
+        RegexAST::Epsilon => {
+            let mut inner_fst = universal_acceptor(symt.clone())?;
+            //closure(&mut inner_fst, ClosureType::ClosureStar);
+            inner_fst
+        }
+        _ => node_fst(symt.clone(), macros, rule.right)?,
+    };
+    let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
+    let mut univ_acc_with_rangle: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
+    let q0 = univ_acc_with_rangle.start().unwrap();
+    univ_acc_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 10.0, q0))?;
+
+    right_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
+    // First machine: r
+    let insert_rangle : VectorFst<TropicalWeight> = fst![0 => rangle];
+    let mut fst_r  = univ_acc.clone();
+    concat(&mut fst_r, &insert_rangle)?;
+    concat(&mut fst_r, &right_fst)?;
+    closure(&mut fst_r, ClosureType::ClosureStar);
+    concat(&mut fst_r, &univ_acc)?;
+    rm_epsilon(&mut fst_r)?;
+    //println!("Machine r done");
+
+    // Second machine: f
+    let insert_langle : VectorFst<TropicalWeight> = fst![0,0 => langle1,langle2];
+    let mut fst_f  = univ_acc_with_rangle.clone();
+    concat(&mut fst_f, &insert_langle)?;
+    concat(&mut fst_f, &src_fst)?;
+    closure(&mut fst_f, ClosureType::ClosureStar);
+    concat(&mut fst_f, &univ_acc_with_rangle)?;
+    rm_epsilon(&mut fst_f)?;
+    //println!("Machine f done");
+
+    // Third machine: replacer
+    let mut univ_acc_drop_angle = univ_acc.clone();
+    let q0 = univ_acc_drop_angle.start().unwrap();
+    univ_acc_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 0.0, q0))?;
+    univ_acc_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 0.0, q0))?;
+    univ_acc_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 0.0, q0))?;
+    tr_sort(&mut univ_acc_drop_angle, OLabelCompare {});
+    let consume_src : VectorFst<TropicalWeight> = compose(univ_acc_drop_angle, output_to_epsilons(src_fst))?;
+    let mut univ_acc_consume_rangle : VectorFst<TropicalWeight> = univ_acc.clone();
+    let q0 = univ_acc_consume_rangle.start().unwrap();
+    univ_acc_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 0.0, q0))?;
+    univ_acc_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 10.0, q0))?;
+    let single_langle : VectorFst<TropicalWeight> = fst![langle1 => langle1];
+    let consume_rangle : VectorFst<TropicalWeight> = fst![rangle => 0];
+    //println!("Components for machine replacer ready...");
+
+    let mut fst_replacer = univ_acc_consume_rangle.clone();
+    concat(&mut fst_replacer, &single_langle)?;
+    concat(&mut fst_replacer, &consume_src)?;
+    concat(&mut fst_replacer, &tgt_fst)?;
+    concat(&mut fst_replacer, &consume_rangle)?;
+    //println!("Concatenation done");
+    closure(&mut fst_replacer, ClosureType::ClosureStar);
+    //println!("Closure done");
+    concat(&mut fst_replacer, &univ_acc_consume_rangle)?;
+    //println!("Removing epsilons...");
+    optimize_fst(&mut fst_replacer,1e-4).expect("woc");
+    //println!("Machine replacer done");
+
+    // Fourth machine: l1
+    let consume_langle1 : VectorFst<TropicalWeight> = fst![langle1 => 0];
+    let mut fst_l1 = univ_acc.clone();
+    concat(&mut fst_l1, &left_fst)?;
+    concat(&mut fst_l1, &consume_langle1)?;
+    closure(&mut fst_l1, ClosureType::ClosureStar);
+    concat(&mut fst_l1, &univ_acc)?;
+    rm_epsilon(&mut fst_l1)?;
+    //println!("Machine l1 done");
+
+    // Fifth machine: l2
+    let left_complement : VectorFst<TropicalWeight> = fst_complement(left_fst, symt)?;
+    let consume_langle2 : VectorFst<TropicalWeight> = fst![langle2 => 0];
+    let mut fst_l2 = univ_acc.clone();
+    concat(&mut fst_l2, &left_complement)?;
+    concat(&mut fst_l2, &consume_langle2)?;
+    closure(&mut fst_l2, ClosureType::ClosureStar);
+    concat(&mut fst_l2, &univ_acc)?;
+    rm_epsilon(&mut fst_l2)?;
+    //println!("Machine l2 done");
+
+    fst_r.set_output_symbols(symt_ext_ref.clone());
+    fst_f.set_output_symbols(symt_ext_ref.clone());
+    fst_replacer.set_output_symbols(symt_ext_ref.clone());
+    fst_l1.set_output_symbols(symt_ext_ref.clone());
+    fst_l2.set_output_symbols(symt_ext_ref.clone());
+
+    fst_r.set_input_symbols(symt_ext_ref.clone());
+    fst_f.set_input_symbols(symt_ext_ref.clone());
+    fst_replacer.set_input_symbols(symt_ext_ref.clone());
+    fst_l1.set_input_symbols(symt_ext_ref.clone());
+    fst_l2.set_input_symbols(symt_ext_ref.clone());
+    /*
+    fst_r.draw("partial_r.dot", &DrawingConfig::default())?;
+    fst_f.draw("partial_f.dot", &DrawingConfig::default())?;
+    fst_replacer.draw("partial_repl.dot", &DrawingConfig::default())?;
+    fst_l1.draw("partial_l1.dot", &DrawingConfig::default())?;
+    fst_l2.draw("partial_l2.dot", &DrawingConfig::default())?;
+     */
+
+    let mut output = fst_r;
+    output.set_start(0)?;
+    tr_sort(&mut output, OLabelCompare {});
+    tr_sort(&mut fst_f, ILabelCompare {});
+    tr_sort(&mut fst_replacer, ILabelCompare {});
+    tr_sort(&mut fst_l1, ILabelCompare {});
+    tr_sort(&mut fst_l2, ILabelCompare {});
+    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_f)?;
+    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_replacer)?;
+    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l1)?;
+    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l2)?;
+
+    println!("Created machine for rule: {}", rulestr);
+    output.draw("rulefst.dot", &DrawingConfig::default())?;
+    //println!("Optimizing...");
+    optimize_fst(&mut output, 1e-6).unwrap_or(());
+    //println!("Successfully optimized");
+    minimize_with_config(&mut output, MinimizeConfig { delta: 1e-4, allow_nondet: true })?;
+    //println!("Successfully minimized");
+    output.draw("rulefst_opt.dot", &DrawingConfig::default())?;
+    /*
+    rm_epsilon(&mut output)?;
+    println!("Successfully removed epsilon transitions");
+     */
+
+    
+    Ok(output)
+}
+
+fn fst_complement(fst: VectorFst<TropicalWeight>, symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
+    let mut complement = fst.clone();
+    rm_epsilon(&mut complement)?;
+    let q_sink = complement.add_state();
+    for q in complement.states_iter() {
+        if q == q_sink { 
+            continue;
+        }
+        let mut outbound = HashSet::<u32>::from_iter(symt.labels());
+        outbound.remove(&EPS_LABEL);
+        for tr in complement.get_trs(q)?.iter() {
+            if tr.ilabel != tr.olabel { return Err(anyhow::anyhow!("FST must be an acceptor"));}
+            outbound.remove(&tr.ilabel);
+        }
+        for label in outbound {
+            complement.add_tr(q, Tr::new(label, label, 0.0, q_sink))?;
+        }
+        if complement.is_final(q)? {
+            complement.delete_final_weight(q)?;
+        } else {
+            complement.set_final(q, 0.0)?;
+        }
+    }
+    for label in symt.labels() {
+        if label == EPS_LABEL { continue; }
+        complement.add_tr(q_sink, Tr::new(label, label, 0.0, q_sink))?;
+    }
+    complement.set_final(q_sink, 0.0)?;
+
+    Ok(complement)
 }
 
 /// Returns a WFST representing a rule.
@@ -576,7 +767,7 @@ pub fn decode_paths_through_fst(
         .map(|p| (*p.weight(), decode_path(symt.clone(), p.clone())))
         .collect();
     outputs.sort_unstable_by(|(w1, _), (w2, _)| w1.partial_cmp(w2).unwrap_or(Ordering::Equal));
-    println!("\n*** outputs={:?}", outputs);
+    //println!("\n*** outputs={:?}", outputs);
     outputs
 }
 
@@ -668,6 +859,7 @@ mod tests {
             println!("{e}: Could not compile script.");
             VectorFst::<TropicalWeight>::new()
         });
+        fst.draw("test2.dot", &DrawingConfig::default()).unwrap();
         let result = apply_fst(symt.clone(), fst, "#ni1hao3#".to_string());
         assert_eq!(result, "#ni{14}hao{4}#".to_string());
     }
@@ -679,7 +871,9 @@ mod tests {
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
         .expect("Failed to parse script in test");
-        let fst = compile_script(symt.clone(), script).expect("Failed to compile script in test");
+        let mut fst = compile_script(symt.clone(), script).expect("Failed to compile script in test");
+        rm_epsilon(&mut fst).unwrap();
+        fst.draw("test.dot", &DrawingConfig::default()).unwrap();
         let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
         assert_eq!(result, "abbppi".to_string());
     }
