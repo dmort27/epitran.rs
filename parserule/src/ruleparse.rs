@@ -138,14 +138,15 @@ fn sequence(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
 }
 
 fn string(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
-    let mut parser = many1(alt((epsilon_mark, characters)));
+    let mut parser = alt((epsilon_mark, characters));
     let (input, elems) = parser.parse(input)?;
-    let mut set = HashSet::new();
-    for (_, s) in elems.clone() {
-        set.extend(s.iter().cloned());
-    }
-    let g: Vec<RegexAST> = elems.iter().cloned().map(|(r, _)| r).collect();
-    Ok((input, (RegexAST::Group(g), set)))
+    // let mut set = HashSet::new();
+    // let mut chars: Vec<RegexAST> = Vec::new();
+    Ok(match elems {
+        (RegexAST::Group(g), set) => (input, (RegexAST::Group(g), set)),
+        (RegexAST::Epsilon, set) => (input, (RegexAST::Epsilon, set)),
+        _ => (input, (RegexAST::Epsilon, HashSet::new())),
+    })
 }
 
 fn group(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
@@ -421,6 +422,24 @@ mod tests {
         set
     }};
 }
+
+    #[test]
+    fn test_string() {
+        assert_eq!(
+            string("abc"),
+            Ok((
+                "",
+                (
+                    RegexAST::Group(vec![
+                        RegexAST::Char('a'),
+                        RegexAST::Char('b'),
+                        RegexAST::Char('c'),
+                    ]),
+                    hashset_str!["a", "b", "c"]
+                )
+            ))
+        );
+    }
 
     #[test]
     fn test_character() {
