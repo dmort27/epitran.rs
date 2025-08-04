@@ -77,7 +77,7 @@ pub fn compile_script(
     statements: Vec<Statement>,
 ) -> Result<VectorFst<TropicalWeight>> {
     // let symt = unicode_symbol_table();
-    let mut fst = universal_acceptor(symt.clone())?;
+    let mut fst = weighted_universal_acceptor(symt.clone(), 0.0)?;
     let mut macros: HashMap<String, RegexAST> = HashMap::new();
     for statement in statements {
         match statement {
@@ -141,7 +141,7 @@ pub fn mohri_sproat_rule_fst(
         input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
     let left_fst = match rule.left {
         RegexAST::Epsilon => {
-            let mut inner_fst = universal_acceptor(symt.clone())?;
+            let inner_fst = weighted_universal_acceptor(symt.clone(), 0.0)?;
             //closure(&mut inner_fst, ClosureType::ClosureStar);
             inner_fst
         }
@@ -149,20 +149,20 @@ pub fn mohri_sproat_rule_fst(
     };
     let right_fst = match rule.right {
         RegexAST::Epsilon => {
-            let mut inner_fst = universal_acceptor(symt.clone())?;
+            let inner_fst = weighted_universal_acceptor(symt.clone(),0.0)?;
             //closure(&mut inner_fst, ClosureType::ClosureStar);
             inner_fst
         }
         _ => node_fst(symt.clone(), macros, rule.right)?,
     };
-    let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
-    let mut univ_acc_with_rangle: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
+    let univ_acc: VectorFst<TropicalWeight> = weighted_universal_acceptor(symt.clone(),0.0)?;
+    let mut univ_acc_with_rangle: VectorFst<TropicalWeight> = univ_acc.clone();
     let q0 = univ_acc_with_rangle.start().unwrap();
-    univ_acc_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 10.0, q0))?;
+    univ_acc_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 0.0, q0))?;
 
     right_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
     // First machine: r
-    let insert_rangle : VectorFst<TropicalWeight> = fst![0 => rangle];
+    let insert_rangle : VectorFst<TropicalWeight> = fst![EPS_LABEL => rangle; -10.0];
     let mut fst_r  = univ_acc.clone();
     concat(&mut fst_r, &insert_rangle)?;
     concat(&mut fst_r, &right_fst)?;
@@ -172,7 +172,7 @@ pub fn mohri_sproat_rule_fst(
     //println!("Machine r done");
 
     // Second machine: f
-    let insert_langle : VectorFst<TropicalWeight> = fst![0,0 => langle1,langle2];
+    let insert_langle : VectorFst<TropicalWeight> = fst![EPS_LABEL,EPS_LABEL => langle1,langle2; -10.0];
     let mut fst_f  = univ_acc_with_rangle.clone();
     concat(&mut fst_f, &insert_langle)?;
     concat(&mut fst_f, &src_fst)?;
@@ -184,17 +184,17 @@ pub fn mohri_sproat_rule_fst(
     // Third machine: replacer
     let mut univ_acc_drop_angle = univ_acc.clone();
     let q0 = univ_acc_drop_angle.start().unwrap();
-    univ_acc_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 0.0, q0))?;
-    univ_acc_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 0.0, q0))?;
-    univ_acc_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 0.0, q0))?;
+    univ_acc_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 10.0, q0))?;
+    univ_acc_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 5.0, q0))?;
+    univ_acc_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 5.0, q0))?;
     tr_sort(&mut univ_acc_drop_angle, OLabelCompare {});
     let consume_src : VectorFst<TropicalWeight> = compose(univ_acc_drop_angle, output_to_epsilons(src_fst))?;
     let mut univ_acc_consume_rangle : VectorFst<TropicalWeight> = univ_acc.clone();
     let q0 = univ_acc_consume_rangle.start().unwrap();
-    univ_acc_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 0.0, q0))?;
-    univ_acc_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 10.0, q0))?;
+    univ_acc_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 20.0, q0))?;
+    univ_acc_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 0.0, q0))?;
     let single_langle : VectorFst<TropicalWeight> = fst![langle1 => langle1];
-    let consume_rangle : VectorFst<TropicalWeight> = fst![rangle => 0];
+    let consume_rangle : VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL; 10.0];
     //println!("Components for machine replacer ready...");
 
     let mut fst_replacer = univ_acc_consume_rangle.clone();
@@ -211,7 +211,7 @@ pub fn mohri_sproat_rule_fst(
     //println!("Machine replacer done");
 
     // Fourth machine: l1
-    let consume_langle1 : VectorFst<TropicalWeight> = fst![langle1 => 0];
+    let consume_langle1 : VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 5.0];
     let mut fst_l1 = univ_acc.clone();
     concat(&mut fst_l1, &left_fst)?;
     concat(&mut fst_l1, &consume_langle1)?;
@@ -222,7 +222,7 @@ pub fn mohri_sproat_rule_fst(
 
     // Fifth machine: l2
     let left_complement : VectorFst<TropicalWeight> = fst_complement(left_fst, symt)?;
-    let consume_langle2 : VectorFst<TropicalWeight> = fst![langle2 => 0];
+    let consume_langle2 : VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 10.0];
     let mut fst_l2 = univ_acc.clone();
     concat(&mut fst_l2, &left_complement)?;
     concat(&mut fst_l2, &consume_langle2)?;
@@ -242,12 +242,12 @@ pub fn mohri_sproat_rule_fst(
     fst_replacer.set_input_symbols(symt_ext_ref.clone());
     fst_l1.set_input_symbols(symt_ext_ref.clone());
     fst_l2.set_input_symbols(symt_ext_ref.clone());
-    /*
     fst_r.draw("partial_r.dot", &DrawingConfig::default())?;
     fst_f.draw("partial_f.dot", &DrawingConfig::default())?;
     fst_replacer.draw("partial_repl.dot", &DrawingConfig::default())?;
     fst_l1.draw("partial_l1.dot", &DrawingConfig::default())?;
     fst_l2.draw("partial_l2.dot", &DrawingConfig::default())?;
+    /*
      */
 
     let mut output = fst_r;
@@ -465,6 +465,20 @@ pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWe
     fst.set_final(q0, 0.0)?;
     for (label, _) in symt.iter().filter(|(_, s)| *s != "<eps>") {
         fst.add_tr(q0, Tr::new(label, label, 10.0, q0))?;
+    }
+    Ok(fst)
+}
+
+/// Return an fst that will accept any string s ∈ Σ*, with specified weight for each transition
+pub fn weighted_universal_acceptor(symt: Arc<SymbolTable>, weight: f32) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = VectorFst::<TropicalWeight>::new();
+    fst.set_input_symbols(symt.clone());
+    fst.set_output_symbols(symt.clone());
+    let q0 = fst.add_state();
+    fst.set_start(q0)?;
+    fst.set_final(q0, 0.0)?;
+    for (label, _) in symt.iter().filter(|(_, s)| *s != "<eps>") {
+        fst.add_tr(q0, Tr::new(label, label, weight, q0))?;
     }
     Ok(fst)
 }
