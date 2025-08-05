@@ -418,6 +418,10 @@ pub fn rule_fst(
     println!("DEBUG: fst_l2 states: {}", fst_l2.num_states());
 
     println!("DEBUG: Starting composition sequence");
+
+    // Debug: Save individual FSTs for inspection
+    draw_wfst(&fst_r, "debug_fst_r", "fst_r (insert rbrace before rho)").ok();
+    draw_wfst(&fst_f, "debug_fst_f", "fst_f (insert lbraces before phi followed by rho)").ok();
     tr_sort(&mut fst_r, OLabelCompare {});
     tr_sort(&mut fst_f, ILabelCompare {});
     println!("DEBUG: Composing fst_r and fst_f");
@@ -428,6 +432,10 @@ pub fn rule_fst(
         return Err(anyhow::anyhow!("First composition resulted in empty FST"));
     }
 
+
+    // Debug: Save the intermediate composition result
+    draw_wfst(&fst, "debug_fst_r_compose_fst_f", "fst_r ∘ fst_f").ok();
+    draw_wfst(&fst_replace, "debug_fst_replace", "fst_replace (replace phi with psi)").ok();
     tr_sort(&mut fst, OLabelCompare {});
     tr_sort(&mut fst_replace, ILabelCompare {});
     println!("DEBUG: Composing with fst_replace");
@@ -800,7 +808,39 @@ fn build_insert_rbrace_before_rho_fixed(
     rho: VectorFst<TropicalWeight>,
 ) -> Result<VectorFst<TropicalWeight>> {
     println!("DEBUG: build_insert_rbrace_before_rho_fixed - start");
+    println!("DEBUG: rho has {} states", rho.num_states());
     
+    // Special case: if rho is epsilon (empty right context), insert rbrace before every position
+    if rho.num_states() == 1 && rho.start().is_some() {
+        let start = rho.start().unwrap();
+        if rho.is_final(start).unwrap_or(false) && 
+           rho.get_trs(start).unwrap_or_default().is_empty() {
+            println!("DEBUG: rho is epsilon, creating FST that inserts rbrace before every symbol");
+            
+            // Create FST that inserts rbrace before every symbol
+            let mut fst = VectorFst::new();
+            let start_state = fst.add_state();
+            fst.set_start(start_state)?;
+            fst.set_final(start_state, 0.0)?;
+            
+            // For each symbol in alphabet, add transition that outputs rbrace then the symbol
+            for &label in &alphabet {
+                // Transition: input symbol -> output rbrace, then output the symbol
+                let intermediate_state = fst.add_state();
+                fst.emplace_tr(start_state, label, rbrace, 0.0, intermediate_state)?;
+                fst.emplace_tr(intermediate_state, 0, label, 0.0, start_state)?; // epsilon:label
+            }
+            
+            println!("DEBUG: created epsilon-rho FST with {} states", fst.num_states());
+            return Ok(fst);
+        }
+    }
+    
+    // General case: insert rbrace before occurrences of rho
+    // This is more complex and would need proper implementation for non-epsilon rho
+    println!("DEBUG: non-epsilon rho case not fully implemented yet");
+    
+    // For now, fall back to original implementation
     let reversed_rho: VectorFst<TropicalWeight> = reverse(&rho)?;
     println!("DEBUG: reversed_rho states: {}", reversed_rho.num_states());
     
@@ -835,6 +875,49 @@ fn build_insert_lbraces_before_phi_followed_by_rho_fixed(
     phi: VectorFst<TropicalWeight>,
 ) -> Result<VectorFst<TropicalWeight>> {
     println!("DEBUG: build_insert_lbraces_before_phi_followed_by_rho_fixed - start");
+    
+    // Check if phi is a simple single-symbol FST
+    if phi.num_states() == 2 && phi.start().is_some() {
+        let start = phi.start().unwrap();
+        let transitions: Vec<_> = phi.get_trs(start).unwrap_or_default().iter().cloned().collect();
+        
+        if transitions.len() == 1 {
+            let tr = &transitions[0];
+            let phi_symbol = tr.ilabel;
+            let next_state = tr.nextstate;
+            
+            if phi.is_final(next_state).unwrap_or(false) && 
+               phi.get_trs(next_state).unwrap_or_default().is_empty() {
+                println!("DEBUG: phi is single symbol {}, creating FST that inserts lbraces before it", phi_symbol);
+                
+                // Create FST that inserts lbrace1 and lbrace2 before phi_symbol, and passes other symbols through
+                let mut fst = VectorFst::new();
+                let start_state = fst.add_state();
+                fst.set_start(start_state)?;
+                fst.set_final(start_state, 0.0)?;
+                
+                // For the phi symbol, insert lbrace1, lbrace2, then the symbol
+                let intermediate1 = fst.add_state();
+                let intermediate2 = fst.add_state();
+                fst.emplace_tr(start_state, phi_symbol, lbrace1, 0.0, intermediate1)?;
+                fst.emplace_tr(intermediate1, 0, lbrace2, 0.0, intermediate2)?; // epsilon:lbrace2
+                fst.emplace_tr(intermediate2, 0, phi_symbol, 0.0, start_state)?; // epsilon:phi_symbol
+                
+                // For all other symbols, pass through unchanged
+                for &label in &alphabet {
+                    if label != phi_symbol {
+                        fst.emplace_tr(start_state, label, label, 0.0, start_state)?;
+                    }
+                }
+                
+                println!("DEBUG: created single-phi FST with {} states", fst.num_states());
+                return Ok(fst);
+            }
+        }
+    }
+    
+    // Fall back to original implementation for complex phi
+    println!("DEBUG: using original implementation for complex phi");
     let mut phi = phi.clone();
     let markers: HashSet<Label> = HashSet::from([lbrace1, lbrace2]);
     let rbrace_fst: VectorFst<TropicalWeight> = fst![rbrace];
