@@ -3,6 +3,9 @@ resolver = "2"
 members = [
     "parserule",
     "rsepitran",
+    "mixtec_fst",
+    "m2mfstaligner",
+    "temp"
 ]
 
 # Specify a consistent version of rustfst for all crates
