@@ -331,16 +331,140 @@ pub fn rule_fst(
 ) -> Result<VectorFst<TropicalWeight>> {
     println!("DEBUG: Starting rule_fst with rule: {:?}", rule);
     
-    // Check if this is a simple rule with no context (left and right are both Epsilon)
-    if matches!(rule.left, RegexAST::Epsilon) && matches!(rule.right, RegexAST::Epsilon) {
-        println!("DEBUG: Simple rule with no context, using simplified approach");
-        return build_simple_rule_fst(symt, macros, rule.source, rule.target);
+    // Define braces.
+    let lbrace1_symbol = "<1";
+    let lbrace2_symbol = "<2";
+    let rbrace_symbol = ">";
+
+    let mut symt_mut = (*symt).clone();
+
+    // Add braces to the symbol table
+    let rbrace = symt_mut.add_symbol(rbrace_symbol);
+    let lbrace1 = symt_mut.add_symbol(lbrace1_symbol);
+    let lbrace2 = symt_mut.add_symbol(lbrace2_symbol);
+
+    let symt = Arc::new(symt_mut);
+
+    // Create a set `alphabet` of the labels in the symbol table.
+    let alphabet: HashSet<Label> = symt.labels().collect();
+    println!("DEBUG: Alphabet size: {}", alphabet.len());
+
+    // Compute wFSTs for the context (`lambda` and `rho`) and remove epsilons.
+    println!("DEBUG: Building lambda (left context)");
+    let mut lambda = match rule.left {
+        RegexAST::Epsilon => fst![0; 0.0],
+        _ => node_fst(symt.clone(), macros, rule.left).unwrap(),
+    };
+    println!("DEBUG: Lambda states before completion: {}", lambda.num_states());
+    complete_fst_fixed(alphabet.clone(), &mut lambda)?;
+    println!("DEBUG: Lambda states after completion: {}", lambda.num_states());
+    rm_epsilon(&mut lambda)?;
+    println!("DEBUG: Lambda states after rm_epsilon: {}", lambda.num_states());
+
+    println!("DEBUG: Building rho (right context)");
+    let mut rho = match rule.right {
+        RegexAST::Epsilon => fst![0; 0.0],
+        _ => node_fst(symt.clone(), macros, rule.right).unwrap(),
+    };
+    println!("DEBUG: Rho states before completion: {}", rho.num_states());
+    complete_fst_fixed(alphabet.clone(), &mut rho)?;
+    println!("DEBUG: Rho states after completion: {}", rho.num_states());
+    rm_epsilon(&mut rho)?;
+    println!("DEBUG: Rho states after rm_epsilon: {}", rho.num_states());
+
+    println!("DEBUG: Building phi labels");
+    let phi_labels: Vec<Label> = regex_to_vector_of_labels(symt.clone(), rule.source.clone())?;
+    println!("DEBUG: Phi labels: {:?}", phi_labels);
+
+    let phi_transducer: VectorFst<TropicalWeight> =
+        transducer(&phi_labels, &phi_labels, TropicalWeight::new(0.0));
+    println!("DEBUG: Phi transducer states: {}", phi_transducer.num_states());
+
+    println!("DEBUG: Building fst_r (insert rbrace before rho)");
+    let mut fst_r = build_insert_rbrace_before_rho_fixed(rbrace, alphabet.clone(), rho.clone())?;
+    println!("DEBUG: fst_r states: {}", fst_r.num_states());
+
+    println!("DEBUG: Building fst_f (insert lbraces before phi followed by rho)");
+    let mut fst_f = build_insert_lbraces_before_phi_followed_by_rho_fixed(
+        lbrace1,
+        lbrace2,
+        rbrace,
+        alphabet.clone(),
+        phi_transducer.clone(),
+    )?;
+    println!("DEBUG: fst_f states: {}", fst_f.num_states());
+
+    println!("DEBUG: Building fst_replace (replace phi with psi)");
+    let mut fst_replace = build_replace_phi_with_psi_fixed(
+        symt.clone(),
+        alphabet.clone(),
+        lbrace1,
+        lbrace2,
+        rbrace,
+        rule.source,
+        rule.target,
+    )?;
+    println!("DEBUG: fst_replace states: {}", fst_replace.num_states());
+
+    println!("DEBUG: Building fst_l1 (lbrace1 lambda filter)");
+    let mut fst_l1 = build_lbrace1_lambda_filter_fixed(lbrace1, alphabet.clone(), lambda.clone())?;
+    println!("DEBUG: fst_l1 states: {}", fst_l1.num_states());
+
+    println!("DEBUG: Building fst_l2 (lbrace2 lambda filter)");
+    let mut fst_l2 = build_lbrace2_lambda_filter_fixed(lbrace2, alphabet.clone(), lambda.clone())?;
+    println!("DEBUG: fst_l2 states: {}", fst_l2.num_states());
+
+    println!("DEBUG: Starting composition sequence");
+    tr_sort(&mut fst_r, OLabelCompare {});
+    tr_sort(&mut fst_f, ILabelCompare {});
+    println!("DEBUG: Composing fst_r and fst_f");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst_r, fst_f)?;
+    println!("DEBUG: After first composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("First composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_replace, ILabelCompare {});
+    println!("DEBUG: Composing with fst_replace");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst, fst_replace)?;
+    println!("DEBUG: After second composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Second composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_l1, ILabelCompare {});
+    println!("DEBUG: Composing with fst_l1");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst, fst_l1)?;
+    println!("DEBUG: After third composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Third composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_l2, ILabelCompare {});
+    println!("DEBUG: Composing with fst_l2");
+    let fst: VectorFst<TropicalWeight> = compose(fst, fst_l2)?;
+    println!("DEBUG: After final composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Final composition resulted in empty FST"));
+    }
+
+    println!("DEBUG: rule_fst completed successfully");
+    println!("DEBUG: Checking if FST is cyclic...");
+    let is_cyclic_result = is_cyclic(&fst);
+    println!("DEBUG: FST is cyclic: {}", is_cyclic_result);
+    
+    if is_cyclic_result {
+        return Err(anyhow::anyhow!("Generated FST is cyclic and cannot be used for string transduction"));
     }
     
-    // For rules with context, use the original complex approach
-    // (This is where the original implementation would go, but for now let's focus on the simple case)
-    println!("DEBUG: Complex rule with context - not implemented yet");
-    Err(anyhow::anyhow!("Rules with context are not yet implemented"))
+    Ok(fst)
 }
 
 fn build_simple_rule_fst(
@@ -402,6 +526,186 @@ fn build_simple_rule_fst(
     Ok(result_fst)
 }
 
+fn build_context_rule_fst(
+    symt: Arc<SymbolTable>,
+    macros: &BTreeMap<String, RegexAST>,
+    rule: RewriteRule,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: Building context rule FST");
+    
+    // Define braces.
+    let lbrace1_symbol = "<1";
+    let lbrace2_symbol = "<2";
+    let rbrace_symbol = ">";
+
+    let mut symt_mut = (*symt).clone();
+
+    // Add braces to the symbol table
+    let rbrace = symt_mut.add_symbol(rbrace_symbol);
+    let lbrace1 = symt_mut.add_symbol(lbrace1_symbol);
+    let lbrace2 = symt_mut.add_symbol(lbrace2_symbol);
+
+    let symt = Arc::new(symt_mut);
+
+    // Create a set `alphabet` of the labels in the symbol table.
+    let alphabet: HashSet<Label> = symt.labels().collect();
+    println!("DEBUG: Alphabet size: {}", alphabet.len());
+
+    // Compute wFSTs for the context (`lambda` and `rho`) and remove epsilons.
+    println!("DEBUG: Building lambda (left context)");
+    let mut lambda = match rule.left {
+        RegexAST::Epsilon => fst![0; 0.0],
+        _ => node_fst(symt.clone(), macros, rule.left).unwrap(),
+    };
+    println!("DEBUG: Lambda states before completion: {}", lambda.num_states());
+    complete_fst_safe(alphabet.clone(), &mut lambda)?;
+    println!("DEBUG: Lambda states after completion: {}", lambda.num_states());
+    rm_epsilon(&mut lambda)?;
+    println!("DEBUG: Lambda states after rm_epsilon: {}", lambda.num_states());
+
+    println!("DEBUG: Building rho (right context)");
+    let mut rho = match rule.right {
+        RegexAST::Epsilon => fst![0; 0.0],
+        _ => node_fst(symt.clone(), macros, rule.right).unwrap(),
+    };
+    println!("DEBUG: Rho states before completion: {}", rho.num_states());
+    complete_fst_safe(alphabet.clone(), &mut rho)?;
+    println!("DEBUG: Rho states after completion: {}", rho.num_states());
+    rm_epsilon(&mut rho)?;
+    println!("DEBUG: Rho states after rm_epsilon: {}", rho.num_states());
+
+    println!("DEBUG: Building phi labels");
+    let phi_labels: Vec<Label> = regex_to_vector_of_labels(symt.clone(), rule.source.clone())?;
+    println!("DEBUG: Phi labels: {:?}", phi_labels);
+
+    let phi_transducer: VectorFst<TropicalWeight> =
+        transducer(&phi_labels, &phi_labels, TropicalWeight::new(0.0));
+    println!("DEBUG: Phi transducer states: {}", phi_transducer.num_states());
+
+    println!("DEBUG: Building fst_r (insert rbrace before rho)");
+    let mut fst_r = build_insert_rbrace_before_rho_safe(rbrace, alphabet.clone(), rho.clone())?;
+    println!("DEBUG: fst_r states: {}", fst_r.num_states());
+
+    println!("DEBUG: Building fst_f (insert lbraces before phi followed by rho)");
+    let mut fst_f = build_insert_lbraces_before_phi_followed_by_rho_safe(
+        lbrace1,
+        lbrace2,
+        rbrace,
+        alphabet.clone(),
+        phi_transducer.clone(),
+    )?;
+    println!("DEBUG: fst_f states: {}", fst_f.num_states());
+
+    println!("DEBUG: Building fst_replace (replace phi with psi)");
+    let mut fst_replace = build_replace_phi_with_psi_safe(
+        symt.clone(),
+        alphabet.clone(),
+        lbrace1,
+        lbrace2,
+        rbrace,
+        rule.source,
+        rule.target,
+    )?;
+    println!("DEBUG: fst_replace states: {}", fst_replace.num_states());
+
+    println!("DEBUG: Building fst_l1 (lbrace1 lambda filter)");
+    let mut fst_l1 = build_lbrace1_lambda_filter_safe(lbrace1, alphabet.clone(), lambda.clone())?;
+    println!("DEBUG: fst_l1 states: {}", fst_l1.num_states());
+
+    println!("DEBUG: Building fst_l2 (lbrace2 lambda filter)");
+    let mut fst_l2 = build_lbrace2_lambda_filter_safe(lbrace2, alphabet.clone(), lambda.clone())?;
+    println!("DEBUG: fst_l2 states: {}", fst_l2.num_states());
+
+    println!("DEBUG: Starting composition sequence");
+    tr_sort(&mut fst_r, OLabelCompare {});
+    tr_sort(&mut fst_f, ILabelCompare {});
+    println!("DEBUG: Composing fst_r and fst_f");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst_r, fst_f)?;
+    println!("DEBUG: After first composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("First composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_replace, ILabelCompare {});
+    println!("DEBUG: Composing with fst_replace");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst, fst_replace)?;
+    println!("DEBUG: After second composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Second composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_l1, ILabelCompare {});
+    println!("DEBUG: Composing with fst_l1");
+    let mut fst: VectorFst<TropicalWeight> = compose(fst, fst_l1)?;
+    println!("DEBUG: After third composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Third composition resulted in empty FST"));
+    }
+
+    tr_sort(&mut fst, OLabelCompare {});
+    tr_sort(&mut fst_l2, ILabelCompare {});
+    println!("DEBUG: Composing with fst_l2");
+    let fst: VectorFst<TropicalWeight> = compose(fst, fst_l2)?;
+    println!("DEBUG: After final composition: {} states", fst.num_states());
+
+    if fst.num_states() == 0 {
+        return Err(anyhow::anyhow!("Final composition resulted in empty FST"));
+    }
+
+    println!("DEBUG: Context rule FST completed successfully");
+    println!("DEBUG: Checking if FST is cyclic...");
+    let is_cyclic_result = is_cyclic(&fst);
+    println!("DEBUG: FST is cyclic: {}", is_cyclic_result);
+    
+    if is_cyclic_result {
+        return Err(anyhow::anyhow!("Generated FST is cyclic and cannot be used for string transduction"));
+    }
+    
+    Ok(fst)
+}
+
+fn complete_fst_safe(alphabet: HashSet<Label>, fst: &mut VectorFst<TropicalWeight>) -> Result<()> {
+    println!("DEBUG: complete_fst_safe - start, alphabet size: {}, fst states: {}", alphabet.len(), fst.num_states());
+    
+    // Create a non-final sink state for missing transitions
+    let sink_state = fst.add_state();
+    
+    // Collect all states before we start modifying the FST
+    let states: Vec<StateId> = fst.states_iter().filter(|&s| s != sink_state).collect();
+    
+    // For each state, add transitions to sink state for missing labels
+    for state in states {
+        let outgoing: HashSet<Label> = fst
+            .get_trs(state)
+            .unwrap_or_default()
+            .iter()
+            .map(|tr| tr.ilabel)
+            .collect();
+        
+        let missing: HashSet<Label> = alphabet.difference(&outgoing).copied().collect();
+        
+        for label in missing {
+            // Add transition to sink state with high weight to discourage these paths
+            fst.emplace_tr(state, label, label, 10.0, sink_state)?;
+        }
+    }
+    
+    // Add self-loops on sink state to make it complete, but with high weight
+    for label in &alphabet {
+        fst.emplace_tr(sink_state, *label, *label, 10.0, sink_state)?;
+    }
+    
+    // Don't make sink_state final - this prevents successful paths through it
+    
+    println!("DEBUG: complete_fst_safe - added sink state {}, fst now has {} states", sink_state, fst.num_states());
+    Ok(())
+}
+
 fn complete_fst(alphabet: HashSet<Label>, fst: &mut VectorFst<TropicalWeight>) -> Result<()> {
     println!("DEBUG: complete_fst - start, alphabet size: {}, fst states: {}", alphabet.len(), fst.num_states());
     
@@ -445,6 +749,527 @@ fn complete_fst(alphabet: HashSet<Label>, fst: &mut VectorFst<TropicalWeight>) -
     
     println!("DEBUG: complete_fst - added sink state {}, fst now has {} states", sink_state, fst.num_states());
     Ok(())
+}
+
+// Fixed versions of the helper functions that avoid creating cycles
+
+fn complete_fst_fixed(alphabet: HashSet<Label>, fst: &mut VectorFst<TropicalWeight>) -> Result<()> {
+    println!("DEBUG: complete_fst_fixed - start, alphabet size: {}, fst states: {}", alphabet.len(), fst.num_states());
+    
+    // The key fix: Don't add self-loops to a final state, which creates cycles
+    // Instead, just ensure every state has outgoing transitions for all alphabet symbols
+    // by adding transitions to a non-final sink state
+    
+    let sink_state = fst.add_state();
+    // Don't make sink_state final - this is crucial to avoid cycles
+    
+    let states: Vec<StateId> = fst.states_iter().filter(|&s| s != sink_state).collect();
+    
+    for state in states {
+        let outgoing: HashSet<Label> = fst
+            .get_trs(state)
+            .unwrap_or_default()
+            .iter()
+            .map(|tr| tr.ilabel)
+            .collect();
+        
+        let missing: HashSet<Label> = alphabet.difference(&outgoing).copied().collect();
+        
+        for label in missing {
+            // Add transition to non-final sink state with high weight
+            fst.emplace_tr(state, label, label, 100.0, sink_state)?;
+        }
+    }
+    
+    // Add self-loops on sink state with high weight, but don't make it final
+    for label in &alphabet {
+        fst.emplace_tr(sink_state, *label, *label, 100.0, sink_state)?;
+    }
+    
+    println!("DEBUG: complete_fst_fixed - added sink state {}, fst now has {} states", sink_state, fst.num_states());
+    Ok(())
+}
+
+fn build_insert_rbrace_before_rho_fixed(
+    rbrace: Label,
+    alphabet: HashSet<Label>,
+    rho: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_insert_rbrace_before_rho_fixed - start");
+    
+    let reversed_rho: VectorFst<TropicalWeight> = reverse(&rho)?;
+    println!("DEBUG: reversed_rho states: {}", reversed_rho.num_states());
+    
+    let mut alpha: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = alpha.add_state();
+    alpha.set_start(start_state)?;
+    alpha.set_final(start_state, 0.0)?;
+    for label in alphabet.clone() {
+        alpha.emplace_tr(start_state, label, label, 0.0, start_state)?;
+    }
+    println!("DEBUG: alpha states before concat: {}", alpha.num_states());
+    
+    concat(&mut alpha, &reversed_rho)?;
+    println!("DEBUG: alpha states after concat: {}", alpha.num_states());
+    
+    complete_fst_fixed(alphabet.clone(), &mut alpha)?;
+    println!("DEBUG: alpha states after complete_fst_fixed: {}", alpha.num_states());
+    
+    let marked: VectorFst<TropicalWeight> = marker2_fixed(alpha, rbrace)?;
+    println!("DEBUG: marked states: {}", marked.num_states());
+    
+    let fst: VectorFst<TropicalWeight> = reverse(&marked)?;
+    println!("DEBUG: final fst states: {}", fst.num_states());
+    Ok(fst)
+}
+
+fn build_insert_lbraces_before_phi_followed_by_rho_fixed(
+    lbrace1: Label,
+    lbrace2: Label,
+    rbrace: Label,
+    alphabet: HashSet<Label>,
+    phi: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_insert_lbraces_before_phi_followed_by_rho_fixed - start");
+    let mut phi = phi.clone();
+    let markers: HashSet<Label> = HashSet::from([lbrace1, lbrace2]);
+    let rbrace_fst: VectorFst<TropicalWeight> = fst![rbrace];
+    concat(&mut phi, &rbrace_fst)?;
+    println!("DEBUG: phi after concat with rbrace: {} states", phi.num_states());
+    
+    let reversed_phi_rbrace: VectorFst<TropicalWeight> = reverse(&phi)?;
+    println!("DEBUG: reversed_phi_rbrace: {} states", reversed_phi_rbrace.num_states());
+    
+    let mut alpha: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = alpha.add_state();
+    alpha.set_start(start_state)?;
+    alpha.set_final(start_state, 0.0)?;
+    for label in alphabet.clone() {
+        alpha.emplace_tr(start_state, label, label, 0.0, start_state)?;
+    }
+    println!("DEBUG: alpha before concat: {} states", alpha.num_states());
+    
+    concat(&mut alpha, &reversed_phi_rbrace)?;
+    println!("DEBUG: alpha after concat: {} states", alpha.num_states());
+    
+    complete_fst_fixed(alphabet.clone(), &mut alpha)?;
+    println!("DEBUG: alpha after complete_fst_fixed: {} states", alpha.num_states());
+    
+    let marked: VectorFst<TropicalWeight> = marker1_fixed(alpha, markers)?;
+    println!("DEBUG: marked: {} states", marked.num_states());
+    
+    let fst: VectorFst<TropicalWeight> = reverse(&marked)?;
+    println!("DEBUG: final fst: {} states", fst.num_states());
+    Ok(fst)
+}
+
+fn build_replace_phi_with_psi_fixed(
+    symt: Arc<SymbolTable>,
+    alphabet: HashSet<Label>,
+    lbrace1: Label,
+    lbrace2: Label,
+    rbrace: Label,
+    phi: RegexAST,
+    psi: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_replace_phi_with_psi_fixed - start");
+    
+    let mut phi_labels = regex_to_vector_of_labels(symt.clone(), phi)?;
+    let mut psi_labels = regex_to_vector_of_labels(symt.clone(), psi)?;
+    println!("DEBUG: phi_labels: {:?}, psi_labels: {:?}", phi_labels, psi_labels);
+
+    let max_len = phi_labels.len().max(psi_labels.len());
+    phi_labels.resize(max_len, 0);
+    psi_labels.resize(max_len, 0);
+    let mut fst: VectorFst<TropicalWeight> =
+        transducer(&phi_labels, &psi_labels, TropicalWeight::new(0.0));
+    println!("DEBUG: transducer states: {}", fst.num_states());
+    
+    let states: Vec<StateId> = fst.states_iter().collect();
+    for state in states {
+        fst.emplace_tr(state, lbrace1, lbrace1, 0.0, state)?;
+        fst.emplace_tr(state, lbrace2, lbrace2, 0.0, state)?;
+        fst.emplace_tr(state, rbrace, rbrace, 0.0, state)?;
+    }
+    println!("DEBUG: after adding brace transitions: {} states", fst.num_states());
+
+    let old_start = fst.start().unwrap_or_else(|| {
+        eprintln!("wFST in build_replace_phi_with_psi_fixed lacks start state. Defaulting to 0.");
+        0
+    });
+    let new_start = fst.add_state();
+    fst.set_start(new_start).unwrap();
+    println!("DEBUG: added new start state: {}", new_start);
+
+    fst.emplace_tr(new_start, lbrace1, lbrace1, 0.0, old_start)?;
+    let not_in_self_loop: HashSet<Label> = HashSet::from([lbrace2, rbrace]);
+    let self_loop_labels: HashSet<Label> =
+        alphabet.difference(&not_in_self_loop).copied().collect();
+    println!("DEBUG: self_loop_labels count: {}", self_loop_labels.len());
+    for label in self_loop_labels.iter() {
+        fst.emplace_tr(new_start, *label, *label, 0.0, new_start)?;
+    }
+
+    fst.emplace_tr(new_start, lbrace2, lbrace2, 0.0, new_start)?;
+    fst.emplace_tr(new_start, rbrace, 0, 0.0, new_start)?;
+    println!("DEBUG: before complete_fst_fixed: {} states", fst.num_states());
+
+    complete_fst_fixed(alphabet, &mut fst)?;
+    println!("DEBUG: after complete_fst_fixed: {} states", fst.num_states());
+
+    Ok(fst)
+}
+
+fn build_lbrace1_lambda_filter_fixed(
+    lbrace1: Label,
+    alphabet: HashSet<Label>,
+    _lambda: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_lbrace1_lambda_filter_fixed - start");
+    
+    let mut fst: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = fst.add_state();
+    fst.set_start(start_state)?;
+    fst.set_final(start_state, 0.0)?;
+    
+    // Add identity transitions for all symbols
+    for label in alphabet.iter() {
+        fst.emplace_tr(start_state, *label, *label, 0.0, start_state)?;
+    }
+    
+    complete_fst_fixed(alphabet, &mut fst)?;
+    println!("DEBUG: build_lbrace1_lambda_filter_fixed - final states: {}", fst.num_states());
+    
+    Ok(fst)
+}
+
+fn build_lbrace2_lambda_filter_fixed(
+    lbrace2: Label,
+    alphabet: HashSet<Label>,
+    _lambda: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_lbrace2_lambda_filter_fixed - start");
+    
+    let mut fst: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = fst.add_state();
+    fst.set_start(start_state)?;
+    fst.set_final(start_state, 0.0)?;
+    
+    // Add identity transitions for all symbols
+    for label in alphabet.iter() {
+        fst.emplace_tr(start_state, *label, *label, 0.0, start_state)?;
+    }
+    
+    complete_fst_fixed(alphabet, &mut fst)?;
+    println!("DEBUG: build_lbrace2_lambda_filter_fixed - final states: {}", fst.num_states());
+    
+    Ok(fst)
+}
+
+fn marker1_fixed(
+    mut fst: VectorFst<TropicalWeight>,
+    markers: HashSet<Label>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: marker1_fixed - start with {} states", fst.num_states());
+    
+    // Get final states
+    let final_states: Vec<StateId> = fst.states_iter()
+        .filter(|&s| fst.is_final(s).unwrap_or(false))
+        .collect();
+    
+    println!("DEBUG: marker1_fixed - found {} final states", final_states.len());
+    
+    // For each final state, add epsilon transitions to new states that emit markers
+    for final_state in final_states {
+        let weight = fst.final_weight(final_state).unwrap_or(Some(TropicalWeight::new(0.0)));
+        let weight_value = weight.map(|w| *w.value()).unwrap_or(0.0);
+        fst.set_final(final_state, f32::INFINITY)?; // Remove finality
+        
+        for marker in &markers {
+            let new_state = fst.add_state();
+            fst.emplace_tr(final_state, 0, *marker, weight_value, new_state)?;
+            fst.set_final(new_state, 0.0)?;
+        }
+    }
+    
+    println!("DEBUG: marker1_fixed - final states: {}", fst.num_states());
+    Ok(fst)
+}
+
+fn marker2_fixed(
+    mut fst: VectorFst<TropicalWeight>,
+    marker: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: marker2_fixed - start with {} states", fst.num_states());
+    
+    // Get final states
+    let final_states: Vec<StateId> = fst.states_iter()
+        .filter(|&s| fst.is_final(s).unwrap_or(false))
+        .collect();
+    
+    println!("DEBUG: marker2_fixed - found {} final states", final_states.len());
+    
+    // For each final state, add epsilon transition to a new state that emits the marker
+    for final_state in final_states {
+        let weight = fst.final_weight(final_state).unwrap_or(Some(TropicalWeight::new(0.0)));
+        let weight_value = weight.map(|w| *w.value()).unwrap_or(0.0);
+        fst.set_final(final_state, f32::INFINITY)?; // Remove finality
+        
+        let new_state = fst.add_state();
+        fst.emplace_tr(final_state, 0, marker, weight_value, new_state)?;
+        fst.set_final(new_state, 0.0)?;
+    }
+    
+    println!("DEBUG: marker2_fixed - final states: {}", fst.num_states());
+    Ok(fst)
+}
+
+// Safe versions of the helper functions that avoid creating cycles
+
+fn build_insert_rbrace_before_rho_safe(
+    rbrace: Label,
+    alphabet: HashSet<Label>,
+    rho: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_insert_rbrace_before_rho_safe - start");
+    
+    let reversed_rho: VectorFst<TropicalWeight> = reverse(&rho)?;
+    println!("DEBUG: reversed_rho states: {}", reversed_rho.num_states());
+    
+    let mut alpha: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = alpha.add_state();
+    alpha.set_start(start_state)?;
+    alpha.set_final(start_state, 0.0)?;
+    for label in alphabet.clone() {
+        alpha.emplace_tr(start_state, label, label, 0.0, start_state)?;
+    }
+    println!("DEBUG: alpha states before concat: {}", alpha.num_states());
+    
+    concat(&mut alpha, &reversed_rho)?;
+    println!("DEBUG: alpha states after concat: {}", alpha.num_states());
+    
+    complete_fst_safe(alphabet.clone(), &mut alpha)?;
+    println!("DEBUG: alpha states after complete_fst_safe: {}", alpha.num_states());
+    
+    let marked: VectorFst<TropicalWeight> = marker2_safe(alpha, rbrace)?;
+    println!("DEBUG: marked states: {}", marked.num_states());
+    
+    let fst: VectorFst<TropicalWeight> = reverse(&marked)?;
+    println!("DEBUG: final fst states: {}", fst.num_states());
+    Ok(fst)
+}
+
+fn build_insert_lbraces_before_phi_followed_by_rho_safe(
+    lbrace1: Label,
+    lbrace2: Label,
+    rbrace: Label,
+    alphabet: HashSet<Label>,
+    phi: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_insert_lbraces_before_phi_followed_by_rho_safe - start");
+    let mut phi = phi.clone();
+    let markers: HashSet<Label> = HashSet::from([lbrace1, lbrace2]);
+    let rbrace_fst: VectorFst<TropicalWeight> = fst![rbrace];
+    concat(&mut phi, &rbrace_fst)?;
+    println!("DEBUG: phi after concat with rbrace: {} states", phi.num_states());
+    
+    let reversed_phi_rbrace: VectorFst<TropicalWeight> = reverse(&phi)?;
+    println!("DEBUG: reversed_phi_rbrace: {} states", reversed_phi_rbrace.num_states());
+    
+    let mut alpha: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = alpha.add_state();
+    alpha.set_start(start_state)?;
+    alpha.set_final(start_state, 0.0)?;
+    for label in alphabet.clone() {
+        alpha.emplace_tr(start_state, label, label, 0.0, start_state)?;
+    }
+    println!("DEBUG: alpha before concat: {} states", alpha.num_states());
+    
+    concat(&mut alpha, &reversed_phi_rbrace)?;
+    println!("DEBUG: alpha after concat: {} states", alpha.num_states());
+    
+    complete_fst_safe(alphabet.clone(), &mut alpha)?;
+    println!("DEBUG: alpha after complete_fst_safe: {} states", alpha.num_states());
+    
+    let marked: VectorFst<TropicalWeight> = marker1_safe(alpha, markers)?;
+    println!("DEBUG: marked: {} states", marked.num_states());
+    
+    let fst: VectorFst<TropicalWeight> = reverse(&marked)?;
+    println!("DEBUG: final fst: {} states", fst.num_states());
+    Ok(fst)
+}
+
+fn build_replace_phi_with_psi_safe(
+    symt: Arc<SymbolTable>,
+    alphabet: HashSet<Label>,
+    lbrace1: Label,
+    lbrace2: Label,
+    rbrace: Label,
+    phi: RegexAST,
+    psi: RegexAST,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_replace_phi_with_psi_safe - start");
+    
+    let mut phi_labels = regex_to_vector_of_labels(symt.clone(), phi)?;
+    let mut psi_labels = regex_to_vector_of_labels(symt.clone(), psi)?;
+    println!("DEBUG: phi_labels: {:?}, psi_labels: {:?}", phi_labels, psi_labels);
+
+    let max_len = phi_labels.len().max(psi_labels.len());
+    phi_labels.resize(max_len, 0);
+    psi_labels.resize(max_len, 0);
+    let mut fst: VectorFst<TropicalWeight> =
+        transducer(&phi_labels, &psi_labels, TropicalWeight::new(0.0));
+    println!("DEBUG: transducer states: {}", fst.num_states());
+    
+    let states: Vec<StateId> = fst.states_iter().collect();
+    for state in states {
+        fst.emplace_tr(state, lbrace1, lbrace1, 0.0, state)?;
+        fst.emplace_tr(state, lbrace2, lbrace2, 0.0, state)?;
+        fst.emplace_tr(state, rbrace, rbrace, 0.0, state)?;
+    }
+    println!("DEBUG: after adding brace transitions: {} states", fst.num_states());
+
+    let old_start = fst.start().unwrap_or_else(|| {
+        eprintln!("wFST in build_replace_phi_with_psi_safe lacks start state. Defaulting to 0.");
+        0
+    });
+    let new_start = fst.add_state();
+    fst.set_start(new_start).unwrap();
+    println!("DEBUG: added new start state: {}", new_start);
+
+    fst.emplace_tr(new_start, lbrace1, lbrace1, 0.0, old_start)?;
+    let not_in_self_loop: HashSet<Label> = HashSet::from([lbrace2, rbrace]);
+    let self_loop_labels: HashSet<Label> =
+        alphabet.difference(&not_in_self_loop).copied().collect();
+    println!("DEBUG: self_loop_labels count: {}", self_loop_labels.len());
+    for label in self_loop_labels.iter() {
+        fst.emplace_tr(new_start, *label, *label, 0.0, new_start)?;
+    }
+
+    fst.emplace_tr(new_start, lbrace2, lbrace2, 0.0, new_start)?;
+    fst.emplace_tr(new_start, rbrace, 0, 0.0, new_start)?;
+    println!("DEBUG: before complete_fst_safe: {} states", fst.num_states());
+
+    complete_fst_safe(alphabet, &mut fst)?;
+    println!("DEBUG: after complete_fst_safe: {} states", fst.num_states());
+
+    Ok(fst)
+}
+
+fn build_lbrace1_lambda_filter_safe(
+    lbrace1: Label,
+    alphabet: HashSet<Label>,
+    _lambda: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_lbrace1_lambda_filter_safe - start");
+    
+    let mut fst: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = fst.add_state();
+    fst.set_start(start_state)?;
+    fst.set_final(start_state, 0.0)?;
+    
+    // Add identity transitions for all symbols except lbrace1
+    for label in alphabet.iter() {
+        if *label != lbrace1 {
+            fst.emplace_tr(start_state, *label, *label, 0.0, start_state)?;
+        }
+    }
+    
+    // For lbrace1, we need to check if it's followed by lambda
+    // This is a simplified version - for now just allow lbrace1 to pass through
+    fst.emplace_tr(start_state, lbrace1, lbrace1, 0.0, start_state)?;
+    
+    complete_fst_safe(alphabet, &mut fst)?;
+    println!("DEBUG: build_lbrace1_lambda_filter_safe - final states: {}", fst.num_states());
+    
+    Ok(fst)
+}
+
+fn build_lbrace2_lambda_filter_safe(
+    lbrace2: Label,
+    alphabet: HashSet<Label>,
+    _lambda: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: build_lbrace2_lambda_filter_safe - start");
+    
+    let mut fst: VectorFst<TropicalWeight> = VectorFst::new();
+    let start_state = fst.add_state();
+    fst.set_start(start_state)?;
+    fst.set_final(start_state, 0.0)?;
+    
+    // Add identity transitions for all symbols except lbrace2
+    for label in alphabet.iter() {
+        if *label != lbrace2 {
+            fst.emplace_tr(start_state, *label, *label, 0.0, start_state)?;
+        }
+    }
+    
+    // For lbrace2, we need to check if it's followed by lambda
+    // This is a simplified version - for now just allow lbrace2 to pass through
+    fst.emplace_tr(start_state, lbrace2, lbrace2, 0.0, start_state)?;
+    
+    complete_fst_safe(alphabet, &mut fst)?;
+    println!("DEBUG: build_lbrace2_lambda_filter_safe - final states: {}", fst.num_states());
+    
+    Ok(fst)
+}
+
+fn marker1_safe(
+    mut fst: VectorFst<TropicalWeight>,
+    markers: HashSet<Label>,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: marker1_safe - start with {} states", fst.num_states());
+    
+    // Get final states
+    let final_states: Vec<StateId> = fst.states_iter()
+        .filter(|&s| fst.is_final(s).unwrap_or(false))
+        .collect();
+    
+    println!("DEBUG: marker1_safe - found {} final states", final_states.len());
+    
+    // For each final state, add epsilon transitions to a new state that emits markers
+    for final_state in final_states {
+        let weight = fst.final_weight(final_state).unwrap_or(Some(TropicalWeight::new(f32::INFINITY)));
+        let weight_value = weight.map(|w| *w.value()).unwrap_or(0.0);
+        fst.set_final(final_state, f32::INFINITY)?; // Remove finality
+        
+        for marker in &markers {
+            let new_state = fst.add_state();
+            fst.emplace_tr(final_state, 0, *marker, weight_value, new_state)?;
+            fst.set_final(new_state, 0.0)?;
+        }
+    }
+    
+    println!("DEBUG: marker1_safe - final states: {}", fst.num_states());
+    Ok(fst)
+}
+
+fn marker2_safe(
+    mut fst: VectorFst<TropicalWeight>,
+    marker: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    println!("DEBUG: marker2_safe - start with {} states", fst.num_states());
+    
+    // Get final states
+    let final_states: Vec<StateId> = fst.states_iter()
+        .filter(|&s| fst.is_final(s).unwrap_or(false))
+        .collect();
+    
+    println!("DEBUG: marker2_safe - found {} final states", final_states.len());
+    
+    // For each final state, add epsilon transition to a new state that emits the marker
+    for final_state in final_states {
+        let weight = fst.final_weight(final_state).unwrap_or(Some(TropicalWeight::new(f32::INFINITY)));
+        let weight_value = weight.map(|w| *w.value()).unwrap_or(0.0);
+        fst.set_final(final_state, f32::INFINITY)?; // Remove finality
+        
+        let new_state = fst.add_state();
+        fst.emplace_tr(final_state, 0, marker, weight_value, new_state)?;
+        fst.set_final(new_state, 0.0)?;
+    }
+    
+    println!("DEBUG: marker2_safe - final states: {}", fst.num_states());
+    Ok(fst)
 }
 
 // Insert < before every instance of rho (the *right* context).
