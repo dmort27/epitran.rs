@@ -3,7 +3,7 @@
 
 // cSpell:disable
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use rustfst::algorithms::compose::compose;
 use rustfst::algorithms::{
     add_super_final_state,
@@ -77,7 +77,7 @@ pub fn compile_script(
     statements: Vec<Statement>,
 ) -> Result<VectorFst<TropicalWeight>> {
     // let symt = unicode_symbol_table();
-    let mut fst = weighted_universal_acceptor(symt.clone(), 0.0)?;
+    let mut fst = weighted_sigma_star(symt.clone(), 0.0)?;
     let mut macros: HashMap<String, RegexAST> = HashMap::new();
     for statement in statements {
         match statement {
@@ -86,10 +86,11 @@ pub fn compile_script(
                 macros.insert(mac, def).unwrap_or(RegexAST::Epsilon);
             }
             Statement::Rule(rule) => {
-                let mut fst2 = mohri_sproat_rule_fst(symt.clone(), &macros, rule.clone())
+                let mut fst2 = rule_fst(symt.clone(), &macros, rule.clone())
                     .inspect_err(|e| {
                         println!(
-                            "Failed to build rule {:?} having macros {:?}: {}", rule, macros, e
+                            "Failed to build rule {:?} having macros {:?}: {}",
+                            rule, macros, e
                         )
                     })
                     .unwrap_or(VectorFst::<TropicalWeight>::new());
@@ -117,12 +118,11 @@ pub fn compile_script(
             }
         }
     }
-    println!("编译成功");
 
     Ok(fst)
 }
 
-pub fn mohri_sproat_rule_fst(
+pub fn rule_fst(
     symt: Arc<SymbolTable>,
     macros: &HashMap<String, RegexAST>,
     rule: RewriteRule,
@@ -135,101 +135,59 @@ pub fn mohri_sproat_rule_fst(
 
     let rulestr = format!("{:?}", rule.clone());
 
-    let src_fst: VectorFst<TropicalWeight> =
-        node_fst(symt.clone(), macros, rule.source)?;
-    let tgt_fst: VectorFst<TropicalWeight> =
+    let phi_fst: VectorFst<TropicalWeight> = node_fst(symt.clone(), macros, rule.source)?;
+    let psi_fst: VectorFst<TropicalWeight> =
         input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
-    let left_fst = match rule.left {
+    let lambda_fst = match rule.left {
         RegexAST::Epsilon => {
-            let inner_fst = weighted_universal_acceptor(symt.clone(), 0.0)?;
+            let inner_fst = weighted_sigma_star(symt.clone(), 0.0)?;
             //closure(&mut inner_fst, ClosureType::ClosureStar);
             inner_fst
         }
         _ => node_fst(symt.clone(), macros, rule.left)?,
     };
-    let right_fst = match rule.right {
+    let rho_fst = match rule.right {
         RegexAST::Epsilon => {
-            let inner_fst = weighted_universal_acceptor(symt.clone(),0.0)?;
+            let inner_fst = weighted_sigma_star(symt.clone(), 0.0)?;
             //closure(&mut inner_fst, ClosureType::ClosureStar);
             inner_fst
         }
         _ => node_fst(symt.clone(), macros, rule.right)?,
     };
-    let univ_acc: VectorFst<TropicalWeight> = weighted_universal_acceptor(symt.clone(),0.0)?;
-    let mut univ_acc_with_rangle: VectorFst<TropicalWeight> = univ_acc.clone();
-    let q0 = univ_acc_with_rangle.start().unwrap();
-    univ_acc_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 0.0, q0))?;
+    let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 0.0)?;
+    let mut sigma_star_with_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
+    let q0 = sigma_star_with_rangle.start().unwrap();
+    sigma_star_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 0.0, q0))?;
 
-    right_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
-    // First machine: r
-    let insert_rangle : VectorFst<TropicalWeight> = fst![EPS_LABEL => rangle; -10.0];
-    let mut fst_r  = univ_acc.clone();
-    concat(&mut fst_r, &insert_rangle)?;
-    concat(&mut fst_r, &right_fst)?;
-    closure(&mut fst_r, ClosureType::ClosureStar);
-    concat(&mut fst_r, &univ_acc)?;
-    rm_epsilon(&mut fst_r)?;
-    //println!("Machine r done");
+    rho_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
 
-    // Second machine: f
-    let insert_langle : VectorFst<TropicalWeight> = fst![EPS_LABEL,EPS_LABEL => langle1,langle2; -10.0];
-    let mut fst_f  = univ_acc_with_rangle.clone();
-    concat(&mut fst_f, &insert_langle)?;
-    concat(&mut fst_f, &src_fst)?;
-    closure(&mut fst_f, ClosureType::ClosureStar);
-    concat(&mut fst_f, &univ_acc_with_rangle)?;
-    rm_epsilon(&mut fst_f)?;
-    //println!("Machine f done");
+    let mut fst_r: VectorFst<TropicalWeight> =
+        build_fst_r(sigma_star.clone(), rho_fst.clone(), rangle)?;
 
-    // Third machine: replacer
-    let mut univ_acc_drop_angle = univ_acc.clone();
-    let q0 = univ_acc_drop_angle.start().unwrap();
-    univ_acc_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 10.0, q0))?;
-    univ_acc_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 5.0, q0))?;
-    univ_acc_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 5.0, q0))?;
-    tr_sort(&mut univ_acc_drop_angle, OLabelCompare {});
-    let consume_src : VectorFst<TropicalWeight> = compose(univ_acc_drop_angle, output_to_epsilons(src_fst))?;
-    let mut univ_acc_consume_rangle : VectorFst<TropicalWeight> = univ_acc.clone();
-    let q0 = univ_acc_consume_rangle.start().unwrap();
-    univ_acc_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 20.0, q0))?;
-    univ_acc_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 0.0, q0))?;
-    let single_langle : VectorFst<TropicalWeight> = fst![langle1 => langle1];
-    let consume_rangle : VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL; 10.0];
-    //println!("Components for machine replacer ready...");
+    let mut fst_f: VectorFst<TropicalWeight> = build_fst_f(
+        sigma_star_with_rangle.clone(),
+        phi_fst.clone(),
+        langle1,
+        langle2,
+    )?;
 
-    let mut fst_replacer = univ_acc_consume_rangle.clone();
-    concat(&mut fst_replacer, &single_langle)?;
-    concat(&mut fst_replacer, &consume_src)?;
-    concat(&mut fst_replacer, &tgt_fst)?;
-    concat(&mut fst_replacer, &consume_rangle)?;
-    //println!("Concatenation done");
-    closure(&mut fst_replacer, ClosureType::ClosureStar);
-    //println!("Closure done");
-    concat(&mut fst_replacer, &univ_acc_consume_rangle)?;
-    //println!("Removing epsilons...");
-    optimize_fst(&mut fst_replacer,1e-4).expect("woc");
-    //println!("Machine replacer done");
+    let mut fst_replacer = build_fst_replacer(
+        sigma_star.clone(),
+        phi_fst.clone(),
+        psi_fst.clone(),
+        rangle,
+        langle1,
+        langle2,
+    )?;
 
-    // Fourth machine: l1
-    let consume_langle1 : VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 5.0];
-    let mut fst_l1 = univ_acc.clone();
-    concat(&mut fst_l1, &left_fst)?;
-    concat(&mut fst_l1, &consume_langle1)?;
-    closure(&mut fst_l1, ClosureType::ClosureStar);
-    concat(&mut fst_l1, &univ_acc)?;
-    rm_epsilon(&mut fst_l1)?;
-    //println!("Machine l1 done");
+    let mut fst_l1 = build_fst_l1(sigma_star.clone(), lambda_fst.clone(), langle1)?;
 
-    // Fifth machine: l2
-    let left_complement : VectorFst<TropicalWeight> = fst_complement(left_fst, symt)?;
-    let consume_langle2 : VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 10.0];
-    let mut fst_l2 = univ_acc.clone();
-    concat(&mut fst_l2, &left_complement)?;
-    concat(&mut fst_l2, &consume_langle2)?;
-    closure(&mut fst_l2, ClosureType::ClosureStar);
-    concat(&mut fst_l2, &univ_acc)?;
-    rm_epsilon(&mut fst_l2)?;
-    //println!("Machine l2 done");
+    let mut fst_l2 = build_fst_l2(
+        symt.clone(),
+        sigma_star.clone(),
+        lambda_fst.clone(),
+        langle2,
+    )?;
 
     fst_r.set_output_symbols(symt_ext_ref.clone());
     fst_f.set_output_symbols(symt_ext_ref.clone());
@@ -258,7 +216,8 @@ pub fn mohri_sproat_rule_fst(
     tr_sort(&mut fst_l1, ILabelCompare {});
     tr_sort(&mut fst_l2, ILabelCompare {});
     output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_f)?;
-    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_replacer)?;
+    output =
+        compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_replacer)?;
     output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l1)?;
     output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l2)?;
 
@@ -267,7 +226,13 @@ pub fn mohri_sproat_rule_fst(
     //println!("Optimizing...");
     optimize_fst(&mut output, 1e-6).unwrap_or(());
     //println!("Successfully optimized");
-    minimize_with_config(&mut output, MinimizeConfig { delta: 1e-4, allow_nondet: true })?;
+    minimize_with_config(
+        &mut output,
+        MinimizeConfig {
+            delta: 1e-4,
+            allow_nondet: true,
+        },
+    )?;
     //println!("Successfully minimized");
     output.draw("rulefst_opt.dot", &DrawingConfig::default())?;
     /*
@@ -275,22 +240,127 @@ pub fn mohri_sproat_rule_fst(
     println!("Successfully removed epsilon transitions");
      */
 
-    
     Ok(output)
 }
 
-fn fst_complement(fst: VectorFst<TropicalWeight>, symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
+fn build_fst_r(
+    sigma_star: VectorFst<TropicalWeight>,
+    rho_fst: VectorFst<TropicalWeight>,
+    rangle: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    let insert_rangle: VectorFst<TropicalWeight> = fst![EPS_LABEL => rangle; -10.0];
+    let mut fst_r = sigma_star.clone();
+    concat(&mut fst_r, &insert_rangle)?;
+    concat(&mut fst_r, &rho_fst)?;
+    closure(&mut fst_r, ClosureType::ClosureStar);
+    concat(&mut fst_r, &sigma_star)?;
+    rm_epsilon(&mut fst_r)?;
+    Ok(fst_r)
+}
+
+fn build_fst_f(
+    sigma_star_with_rangle: VectorFst<TropicalWeight>,
+    phi_fst: VectorFst<TropicalWeight>,
+    langle1: Label,
+    langle2: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    let insert_langle: VectorFst<TropicalWeight> =
+        fst![EPS_LABEL,EPS_LABEL => langle1,langle2; -10.0];
+    let mut fst_f = sigma_star_with_rangle.clone();
+    concat(&mut fst_f, &insert_langle)?;
+    concat(&mut fst_f, &phi_fst)?;
+    closure(&mut fst_f, ClosureType::ClosureStar);
+    concat(&mut fst_f, &sigma_star_with_rangle)?;
+    rm_epsilon(&mut fst_f)?;
+    Ok(fst_f)
+}
+
+fn build_fst_replacer(
+    sigma_star: VectorFst<TropicalWeight>,
+    phi_fst: VectorFst<TropicalWeight>,
+    psi_fst: VectorFst<TropicalWeight>,
+    rangle: Label,
+    langle1: Label,
+    langle2: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut sigma_star_drop_angle = sigma_star.clone();
+    let q0 = sigma_star_drop_angle.start().unwrap();
+    sigma_star_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 10.0, q0))?;
+    sigma_star_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 5.0, q0))?;
+    sigma_star_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 5.0, q0))?;
+    tr_sort(&mut sigma_star_drop_angle, OLabelCompare {});
+    let consume_src: VectorFst<TropicalWeight> =
+        compose(sigma_star_drop_angle, output_to_epsilons(phi_fst))?;
+    let mut sigma_star_consume_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
+    let q0 = sigma_star_consume_rangle.start().unwrap();
+    sigma_star_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 20.0, q0))?;
+    sigma_star_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 0.0, q0))?;
+    let single_langle: VectorFst<TropicalWeight> = fst![langle1 => langle1];
+    let consume_rangle: VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL; 10.0];
+
+    let mut fst_replacer = sigma_star_consume_rangle.clone();
+    concat(&mut fst_replacer, &single_langle)?;
+    concat(&mut fst_replacer, &consume_src)?;
+    concat(&mut fst_replacer, &psi_fst)?;
+    concat(&mut fst_replacer, &consume_rangle)?;
+    //println!("Concatenation done");
+    closure(&mut fst_replacer, ClosureType::ClosureStar);
+    //println!("Closure done");
+    concat(&mut fst_replacer, &sigma_star_consume_rangle)?;
+    //println!("Removing epsilons...");
+    optimize_fst(&mut fst_replacer, 1e-4).expect("woc");
+    Ok(fst_replacer)
+}
+
+fn build_fst_l1(
+    sigma_star: VectorFst<TropicalWeight>,
+    lambda_fst: VectorFst<TropicalWeight>,
+    langle1: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    let consume_langle1: VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 5.0];
+    let mut fst_l1 = sigma_star.clone();
+    concat(&mut fst_l1, &lambda_fst)?;
+    concat(&mut fst_l1, &consume_langle1)?;
+    closure(&mut fst_l1, ClosureType::ClosureStar);
+    concat(&mut fst_l1, &sigma_star)?;
+    rm_epsilon(&mut fst_l1)?;
+    Ok(fst_l1)
+}
+
+fn build_fst_l2(
+    symt: Arc<SymbolTable>,
+    sigma_star: VectorFst<TropicalWeight>,
+    lambda_fst: VectorFst<TropicalWeight>,
+    langle2: Label,
+) -> Result<VectorFst<TropicalWeight>> {
+    let left_complement: VectorFst<TropicalWeight> = fst_complement(lambda_fst, symt)?;
+    let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 10.0];
+    let mut fst_l2 = sigma_star.clone();
+    concat(&mut fst_l2, &left_complement)?;
+    concat(&mut fst_l2, &consume_langle2)?;
+    closure(&mut fst_l2, ClosureType::ClosureStar);
+    concat(&mut fst_l2, &sigma_star)?;
+    rm_epsilon(&mut fst_l2)?;
+    Ok(fst_l2)
+}
+
+fn fst_complement(
+    fst: VectorFst<TropicalWeight>,
+    symt: Arc<SymbolTable>,
+) -> Result<VectorFst<TropicalWeight>> {
     let mut complement = fst.clone();
     rm_epsilon(&mut complement)?;
     let q_sink = complement.add_state();
     for q in complement.states_iter() {
-        if q == q_sink { 
+        if q == q_sink {
             continue;
         }
         let mut outbound = HashSet::<u32>::from_iter(symt.labels());
         outbound.remove(&EPS_LABEL);
         for tr in complement.get_trs(q)?.iter() {
-            if tr.ilabel != tr.olabel { return Err(anyhow::anyhow!("FST must be an acceptor"));}
+            if tr.ilabel != tr.olabel {
+                return Err(anyhow::anyhow!("FST must be an acceptor"));
+            }
             outbound.remove(&tr.ilabel);
         }
         for label in outbound {
@@ -303,7 +373,9 @@ fn fst_complement(fst: VectorFst<TropicalWeight>, symt: Arc<SymbolTable>) -> Res
         }
     }
     for label in symt.labels() {
-        if label == EPS_LABEL { continue; }
+        if label == EPS_LABEL {
+            continue;
+        }
         complement.add_tr(q_sink, Tr::new(label, label, 0.0, q_sink))?;
     }
     complement.set_final(q_sink, 0.0)?;
@@ -322,102 +394,6 @@ fn fst_complement(fst: VectorFst<TropicalWeight>, symt: Arc<SymbolTable>) -> Res
 /// # Returns
 ///
 /// A WFST corresponding to a rewrite rule
-pub fn rule_fst(
-    symt: Arc<SymbolTable>,
-    macros: &HashMap<String, RegexAST>,
-    rule: RewriteRule,
-) -> Result<VectorFst<TropicalWeight>> {
-    
-    let mut fst = VectorFst::<TropicalWeight>::new();
-    fst.set_input_symbols(symt.clone());
-    fst.set_output_symbols(symt.clone());
-    let q0 = fst.add_state();
-    fst.set_start(0)?;
-    let q1 = fst.add_state();
-    fst.set_final(q1, TropicalWeight::one())?;
-    fst.emplace_tr(q0, 0, 0, TropicalWeight::one(), q1)?;
-
-    // Compute core (L[S->T]R)
-
-    let src_fst: VectorFst<TropicalWeight> =
-        output_to_epsilons(node_fst(symt.clone(), macros, rule.source)?);
-    let tgt_fst: VectorFst<TropicalWeight> =
-        input_to_epsilons(node_fst(symt.clone(), macros, rule.target)?);
-    let left_fst = match rule.left {
-        RegexAST::Epsilon => {
-            let mut inner_fst = universal_acceptor(symt.clone())?;
-            closure(&mut inner_fst, ClosureType::ClosureStar);
-            inner_fst
-        }
-        _ => node_fst(symt.clone(), macros, rule.left)?,
-    };
-    let right_fst = match rule.right {
-        RegexAST::Epsilon => {
-            let mut inner_fst = universal_acceptor(symt.clone())?;
-            closure(&mut inner_fst, ClosureType::ClosureStar);
-            inner_fst
-        }
-        _ => node_fst(symt.clone(), macros, rule.right)?,
-    };
-    let univ_acc: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
-
-    concat(&mut fst, &left_fst)?;
-    concat(&mut fst, &src_fst)?;
-    concat(&mut fst, &tgt_fst)?;
-    concat(&mut fst, &right_fst)?;
-    concat(&mut fst, &univ_acc)?;
-
-    let first_state: u32 = 0;
-    let last_state: u32 = (fst.num_states() - 1) as u32;
-
-    fst.emplace_tr(last_state, 0, 0, 0.0, first_state)?;
-    fst.emplace_tr(first_state, 0, 0, 10.0, last_state)?;
-    fst.set_final(last_state, 0.0)?;
-
-    let mut root: VectorFst<TropicalWeight> = universal_acceptor(symt.clone())?;
-
-    concat(&mut root, &fst)?;
-
-    root.set_start(0)?;
-
-    // let _ = root.draw(
-    //     "root_fst.dot",
-    //     &DrawingConfig {
-    //         vertical: false,
-    //         size: (Some((10.0, 10.0))),
-    //         title: ("Source FST before adding root".to_string()),
-    //         portrait: (true),
-    //         ranksep: (None),
-    //         nodesep: (None),
-    //         fontsize: (12),
-    //         acceptor: (false),
-    //         show_weight_one: (true),
-    //         print_weight: (true),
-    //     },
-    // );
-    // Command::new("dot")
-    //     .args(["-Tpdf", "-oroot_fst.pdf", "root_fst.dot"])
-    //     .spawn()
-    //     .expect("Could not run dot on dot file \"fst.dot\".");
-
-    // Command::new("open")
-    //     .arg("root_fst.pdf")
-    //     .spawn()
-    //     .expect("Could not open \"root_fst.pdf\".");
-
-    // rm_epsilon(&mut root).unwrap_or_else(|e| println!("{e}: Cannot remove epsilons."));
-    // minimize_with_config(
-    //     &mut root,
-    //     MinimizeConfig {
-    //         delta: 1e-7,
-    //         allow_nondet: (true),
-    //     },
-    // )?;
-    // .unwrap_or_else(|e| println!("{e}: Could not minimize wFST. Proceeding"));
-    optimize_fst(&mut root, 1e-6).unwrap_or(());
-
-    Ok(root)
-}
 
 fn output_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight> {
     let mut fst2 = fst.clone();
@@ -456,7 +432,7 @@ fn input_to_epsilons(fst: VectorFst<TropicalWeight>) -> VectorFst<TropicalWeight
 }
 
 /// Return an fst that will accept any string s ∈ Σ*
-pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
+pub fn sigma_star(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -470,7 +446,10 @@ pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWe
 }
 
 /// Return an fst that will accept any string s ∈ Σ*, with specified weight for each transition
-pub fn weighted_universal_acceptor(symt: Arc<SymbolTable>, weight: f32) -> Result<VectorFst<TropicalWeight>> {
+pub fn weighted_sigma_star(
+    symt: Arc<SymbolTable>,
+    weight: f32,
+) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = VectorFst::<TropicalWeight>::new();
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
@@ -634,7 +613,7 @@ fn node_fst(
     Ok(fst)
 }
 
-// pub fn universal_acceptor(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
+// pub fn sigma_star(symt: Arc<SymbolTable>) -> Result<VectorFst<TropicalWeight>> {
 //     let mut fst: VectorFst<TropicalWeight> = fst![0 => 0];
 //     fst.emplace_tr(0, 0, 0, 0.0, 1)?;
 //     for (label, _) in symt.iter().filter(|(_, s)| *s != "#") {
@@ -849,18 +828,22 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
         .collect::<Vec<StringPath<TropicalWeight>>>()[0]
         .olabels()
         .iter()
-        .map(|l| symt.get_symbol(*l).unwrap_or_else(|| {
-            eprintln!("Label {l} not found in Symbol Table while decoding path. Using empty string.");
-            ""
-        }))
+        .map(|l| {
+            symt.get_symbol(*l).unwrap_or_else(|| {
+                eprintln!(
+                    "Label {l} not found in Symbol Table while decoding path. Using empty string."
+                );
+                ""
+            })
+        })
         .collect::<String>()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustfst::algorithms::rm_epsilon::rm_epsilon;
     use crate::ruleparse::{parse_script, rule, rule_no_env};
+    use rustfst::algorithms::rm_epsilon::rm_epsilon;
 
     #[test]
     fn test_compile_script_basic() {
@@ -885,7 +868,8 @@ mod tests {
             "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
         )
         .expect("Failed to parse script in test");
-        let mut fst = compile_script(symt.clone(), script).expect("Failed to compile script in test");
+        let mut fst =
+            compile_script(symt.clone(), script).expect("Failed to compile script in test");
         rm_epsilon(&mut fst).unwrap();
         fst.draw("test.dot", &DrawingConfig::default()).unwrap();
         let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
