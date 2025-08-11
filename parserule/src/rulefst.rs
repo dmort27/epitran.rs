@@ -9,13 +9,13 @@ use rustfst::algorithms::{
     add_super_final_state,
     closure::{closure, ClosureType},
     concat::concat,
-    determinize::determinize,
     shortest_path, tr_sort,
     union::union,
 };
 // Explicitly import VectorFst to avoid conflicts
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::{CoreFst, ExpandedFst, MutableFst};
+use rustfst::prelude::determinize::{determinize_with_config, DeterminizeConfig, DeterminizeType};
 use rustfst::prelude::rm_epsilon::rm_epsilon;
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
@@ -295,45 +295,79 @@ fn build_fst_replacer(
     langle1: Label,
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
-    let mut sigma_star_drop_angle = sigma_star.clone();
-    let q0 = sigma_star_drop_angle.start().unwrap_or_else(|| {
-        eprintln!("wFST sigma_star_drop_angle lacks a start state, which shouldn't happen.");
-        0
-    });
-    sigma_star_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 10.0, q0))?;
-    sigma_star_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 5.0, q0))?;
-    sigma_star_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 5.0, q0))?;
-    tr_sort(&mut sigma_star_drop_angle, OLabelCompare {});
-    let consume_phi: VectorFst<TropicalWeight> =
-        compose(sigma_star_drop_angle, output_to_epsilons(phi_fst))?;
-    let mut sigma_star_consume_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
-    let q0 = sigma_star_consume_rangle.start().unwrap();
-    sigma_star_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 20.0, q0))?;
-    sigma_star_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 0.0, q0))?;
-    let single_langle: VectorFst<TropicalWeight> = fst![langle1 => langle1];
-    let consume_rangle: VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL; 10.0];
+    let mut phi_fst: VectorFst<TropicalWeight> = output_to_epsilons(phi_fst);
+    let mut psi_fst: VectorFst<TropicalWeight> = input_to_epsilons(psi_fst);
+    let rangle_fst: VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL];
+    let langle1_fst: VectorFst<TropicalWeight> = fst![langle1 => langle1];
 
-    let mut fst_replacer = sigma_star_consume_rangle.clone();
-    concat(&mut fst_replacer, &single_langle)?;
-    concat(&mut fst_replacer, &consume_phi)?;
-    concat(&mut fst_replacer, &psi_fst)?;
-    concat(&mut fst_replacer, &consume_rangle)?;
-    //println!("Concatenation done");
-    closure(&mut fst_replacer, ClosureType::ClosureStar);
-    //println!("Closure done");
-    concat(&mut fst_replacer, &sigma_star_consume_rangle)?;
-    //println!("Removing epsilons...");
-    optimize_fst(&mut fst_replacer, 1e-4)
-        .unwrap_or_else(|e| eprintln!("{e}: Optimization of fst_replacer failed."));
-    Ok(fst_replacer)
+    // let s = phi_fst.start().unwrap();
+    let phi_states: Vec<StateId> = phi_fst.states_iter().collect();
+    phi_states.iter().for_each(|s| {
+        phi_fst.emplace_tr(*s, rangle, EPS_LABEL, 0.0, *s).unwrap();
+        phi_fst.emplace_tr(*s, langle1, EPS_LABEL, 0.0, *s).unwrap();
+        phi_fst.emplace_tr(*s, langle2, EPS_LABEL, 0.0, *s).unwrap();
+    });
+    tr_sort(&mut phi_fst, OLabelCompare {});
+    tr_sort(&mut psi_fst, ILabelCompare {});
+    let phi_psi_fst: VectorFst<TropicalWeight> = compose(phi_fst, psi_fst)?;
+
+    let mut fst: VectorFst<TropicalWeight> = sigma_star.clone();
+    concat(&mut fst, &langle1_fst)?;
+    concat(&mut fst, &phi_psi_fst)?;
+    concat(&mut fst, &rangle_fst)?;
+    closure(&mut fst, ClosureType::ClosureStar);
+    concat(&mut fst, &sigma_star.clone())?;
+
+    Ok(fst)
 }
+
+// fn old_build_fst_replacer(
+//     sigma_star: VectorFst<TropicalWeight>,
+//     phi_fst: VectorFst<TropicalWeight>,
+//     psi_fst: VectorFst<TropicalWeight>,
+//     rangle: Label,
+//     langle1: Label,
+//     langle2: Label,
+// ) -> Result<VectorFst<TropicalWeight>> {
+//     let mut sigma_star_drop_angle = sigma_star.clone();
+//     let q0 = sigma_star_drop_angle.start().unwrap_or_else(|| {
+//         eprintln!("wFST sigma_star_drop_angle lacks a start state, which shouldn't happen.");
+//         0
+//     });
+//     sigma_star_drop_angle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 10.0, q0))?;
+//     sigma_star_drop_angle.add_tr(q0, Tr::new(langle1, EPS_LABEL, 5.0, q0))?;
+//     sigma_star_drop_angle.add_tr(q0, Tr::new(langle2, EPS_LABEL, 5.0, q0))?;
+//     tr_sort(&mut sigma_star_drop_angle, OLabelCompare {});
+//     let consume_phi: VectorFst<TropicalWeight> =
+//         compose(sigma_star_drop_angle, output_to_epsilons(phi_fst))?;
+//     let mut sigma_star_consume_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
+//     let q0 = sigma_star_consume_rangle.start().unwrap();
+//     sigma_star_consume_rangle.add_tr(q0, Tr::new(rangle, EPS_LABEL, 20.0, q0))?;
+//     sigma_star_consume_rangle.add_tr(q0, Tr::new(langle2, langle2, 0.0, q0))?;
+//     let single_langle: VectorFst<TropicalWeight> = fst![langle1 => langle1];
+//     let consume_rangle: VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL; 10.0];
+
+//     let mut fst_replacer = sigma_star_consume_rangle.clone();
+//     concat(&mut fst_replacer, &single_langle)?;
+//     concat(&mut fst_replacer, &consume_phi)?;
+//     concat(&mut fst_replacer, &psi_fst)?;
+//     concat(&mut fst_replacer, &consume_rangle)?;
+//     //println!("Concatenation done");
+//     closure(&mut fst_replacer, ClosureType::ClosureStar);
+//     //println!("Closure done");
+//     concat(&mut fst_replacer, &sigma_star_consume_rangle)?;
+//     //println!("Removing epsilons...");
+//     optimize_fst(&mut fst_replacer, 1e-4)
+//         .unwrap_or_else(|e| eprintln!("{e}: Optimization of fst_replacer failed."));
+//     Ok(fst_replacer)
+// }
 
 fn build_fst_l1(
     sigma_star: VectorFst<TropicalWeight>,
     lambda_fst: VectorFst<TropicalWeight>,
     langle1: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
-    let consume_langle1: VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 5.0];
+    let consume_langle1: VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 0.0];
     let mut fst_l1 = sigma_star.clone();
     concat(&mut fst_l1, &lambda_fst)?;
     concat(&mut fst_l1, &consume_langle1)?;
@@ -349,7 +383,7 @@ fn build_fst_l2(
     lambda_fst: VectorFst<TropicalWeight>,
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
-    let left_complement: VectorFst<TropicalWeight> = fst_complement(lambda_fst, symt)?;
+    let left_complement: VectorFst<TropicalWeight> = fst_complement(symt.clone(), lambda_fst)?;
     let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 10.0];
     let mut fst_l2 = sigma_star.clone();
     concat(&mut fst_l2, &left_complement)?;
@@ -361,6 +395,44 @@ fn build_fst_l2(
 }
 
 fn fst_complement(
+    symt: Arc<SymbolTable>,
+    fst: VectorFst<TropicalWeight>,
+) -> Result<VectorFst<TropicalWeight>> {
+    let sigma: HashSet<Label> = symt.labels().filter(|l| *l != EPS_LABEL).collect();
+    let mut fst: VectorFst<TropicalWeight> = fst.clone();
+    rm_epsilon(&mut fst)?;
+    let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
+        &fst,
+        DeterminizeConfig {
+            delta: 1.0e-4,
+            det_type: DeterminizeType::DeterminizeNonFunctional,
+        },
+    )?;
+    let states: Vec<StateId> = fst.states_iter().collect();
+    let sink: StateId = fst.add_state();
+    fst.set_final(sink, 0.0)?;
+    states.iter().for_each(|s| {
+        let leaving: HashSet<Label> = fst
+            .get_trs(*s)
+            .unwrap()
+            .iter()
+            .map(|tr| tr.ilabel)
+            .collect();
+        let complement: HashSet<Label> = sigma.difference(&leaving).copied().collect();
+        dbg!(complement.clone());
+        complement
+            .iter()
+            .for_each(|l| fst.emplace_tr(*s, *l, *l, 0.0, sink).unwrap());
+        if fst.is_final(*s).unwrap() {
+            fst.delete_final_weight(*s).unwrap();
+        } else {
+            fst.set_final(*s, 0.0).unwrap();
+        }
+    });
+    Ok(fst)
+}
+
+fn fst_complement_old(
     fst: VectorFst<TropicalWeight>,
     symt: Arc<SymbolTable>,
 ) -> Result<VectorFst<TropicalWeight>> {
@@ -868,6 +940,12 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
         .collect::<String>()
 }
 
+pub fn fst_accepts(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, string: String) -> bool {
+    let linear_automaton: VectorFst<TropicalWeight> = string_to_linear_automaton(symt, &string);
+    let composed: VectorFst<TropicalWeight> = compose(linear_automaton, fst).unwrap();
+    composed.num_states() > 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -901,7 +979,7 @@ mod tests {
     }
 
     #[test]
-    fn test_component_build_fst_f() {
+    fn test_component_build_fst_f1() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
         let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
         let phi_fst = fst![1 => 1];
@@ -909,7 +987,7 @@ mod tests {
         let langle1 = 6;
         let langle2 = 7;
 
-        let mut fst_f: VectorFst<TropicalWeight> =
+        let fst_f: VectorFst<TropicalWeight> =
             build_fst_f(sigma_star, phi_fst, rangle, langle1, langle2).unwrap();
         // rm_epsilon(&mut fst_f).unwrap();
 
@@ -917,6 +995,235 @@ mod tests {
 
         let output: String = apply_fst(symt.clone(), fst_f, input);
         assert_eq!(output, "#b^a$c#");
+    }
+
+    #[test]
+    fn test_component_build_fst_f2() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let phi_fst = fst![1 => 1];
+        let rangle = 5;
+        let langle1 = 6;
+        let langle2 = 7;
+
+        let fst_f: VectorFst<TropicalWeight> =
+            build_fst_f(sigma_star, phi_fst, rangle, langle1, langle2).unwrap();
+        // rm_epsilon(&mut fst_f).unwrap();
+
+        let input = "#ba$ccca$b#".to_string();
+
+        let output: String = apply_fst(symt.clone(), fst_f, input);
+        assert_eq!(output, "#b^a$ccc^a$b#");
+    }
+
+    #[test]
+    fn test_component_build_fst_replacer1() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let phi_fst = fst![1 => 0; 0.0];
+        let psi_fst = fst![0 => 2; 0.0];
+        let rangle = 5;
+        let langle1 = 6;
+        let langle2 = 7;
+
+        let fst_replacer: VectorFst<TropicalWeight> =
+            build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
+
+        let input: String = "aaa".to_string();
+
+        let output: String = apply_fst(symt.clone(), fst_replacer, input);
+        assert_eq!(output, "bbb");
+    }
+
+    #[test]
+    fn test_component_build_fst_replacer2() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let phi_fst = fst![1 => 0; 0.0];
+        let psi_fst = fst![0 => 2; 0.0];
+        let rangle = 5;
+        let langle1 = 6;
+        let langle2 = 7;
+
+        let fst_replacer: VectorFst<TropicalWeight> =
+            build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
+
+        let input: String = "acacac".to_string();
+
+        let output: String = apply_fst(symt.clone(), fst_replacer, input);
+        assert_eq!(output, "bcbcbc");
+    }
+
+    #[test]
+    fn test_component_build_fst_replacer3() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let phi_fst = fst![1,3 => 0; 0.0];
+        let psi_fst = fst![0 => 2; 0.0];
+        let rangle = 5;
+        let langle1 = 6;
+        let langle2 = 7;
+
+        let fst_replacer: VectorFst<TropicalWeight> =
+            build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
+
+        let input: String = "acacac".to_string();
+
+        let output: String = apply_fst(symt.clone(), fst_replacer, input);
+        assert_eq!(output, "bbb");
+    }
+
+    #[test]
+    fn test_component_build_fst_replacer4() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let phi_fst = fst![1,3 => 0; 0.0];
+        let psi_fst = fst![0 => 2; 0.0];
+        let rangle = 5;
+        let langle1 = 6;
+        let langle2 = 7;
+
+        let fst_replacer: VectorFst<TropicalWeight> =
+            build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
+
+        let input: String = "bbacbbabbcac".to_string();
+
+        let output: String = apply_fst(symt.clone(), fst_replacer, input);
+        assert_eq!(output, "bbbbbabbcb");
+    }
+
+    #[test]
+    fn test_component_build_fst_l1_1() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        // let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let mut sigma_star: VectorFst<TropicalWeight> = VectorFst::new();
+        let start_state = sigma_star.add_state();
+        sigma_star.set_start(start_state).unwrap();
+        sigma_star.set_final(start_state, 0.0).unwrap();
+        symt.labels().filter(|l| *l != 0 && *l != 6).for_each(|l| {
+            sigma_star
+                .emplace_tr(start_state, l, l, 10.0, start_state)
+                .unwrap()
+        });
+        let lambda_fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let langle1: Label = 6;
+        let fst_l1: VectorFst<TropicalWeight> =
+            build_fst_l1(sigma_star, lambda_fst, langle1).unwrap();
+        assert!(fst_accepts(symt, fst_l1, "a^b".to_string()));
+    }
+
+    #[test]
+    fn test_component_build_fst_l1_2() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        // let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let mut sigma_star: VectorFst<TropicalWeight> = VectorFst::new();
+        let start_state = sigma_star.add_state();
+        sigma_star.set_start(start_state).unwrap();
+        sigma_star.set_final(start_state, 0.0).unwrap();
+        symt.labels().filter(|l| *l != 0 && *l != 6).for_each(|l| {
+            sigma_star
+                .emplace_tr(start_state, l, l, 10.0, start_state)
+                .unwrap()
+        });
+        let lambda_fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let langle1: Label = 6;
+        let fst_l1: VectorFst<TropicalWeight> =
+            build_fst_l1(sigma_star, lambda_fst, langle1).unwrap();
+        assert!(!fst_accepts(symt, fst_l1, "c^b".to_string()));
+    }
+
+    #[test]
+    fn test_component_build_fst_l2_1() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        // let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let mut sigma_star: VectorFst<TropicalWeight> = VectorFst::new();
+        let start_state = sigma_star.add_state();
+        sigma_star.set_start(start_state).unwrap();
+        sigma_star.set_final(start_state, 0.0).unwrap();
+        symt.clone()
+            .labels()
+            .filter(|l| *l != 0 && *l != 7)
+            .for_each(|l| {
+                sigma_star
+                    .emplace_tr(start_state, l, l, 10.0, start_state)
+                    .unwrap()
+            });
+        let lambda_fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let langle2: Label = 7;
+        let fst_l2: VectorFst<TropicalWeight> =
+            build_fst_l2(symt.clone(), sigma_star, lambda_fst, langle2).unwrap();
+        assert!(fst_accepts(symt.clone(), fst_l2, "c%b".to_string()));
+    }
+
+    #[test]
+    fn test_component_build_fst_l2_2() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "#", "$", "^", "%"]);
+        // let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0).unwrap();
+        let mut sigma_star: VectorFst<TropicalWeight> = VectorFst::new();
+        let start_state = sigma_star.add_state();
+        sigma_star.set_start(start_state).unwrap();
+        sigma_star.set_final(start_state, 0.0).unwrap();
+        symt.clone()
+            .labels()
+            .filter(|l| *l != 0 && *l != 7)
+            .for_each(|l| {
+                sigma_star
+                    .emplace_tr(start_state, l, l, 10.0, start_state)
+                    .unwrap()
+            });
+        let lambda_fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let langle2: Label = 7;
+        let fst_l2: VectorFst<TropicalWeight> =
+            build_fst_l2(symt.clone(), sigma_star, lambda_fst, langle2).unwrap();
+        assert!(!fst_accepts(symt.clone(), fst_l2, "a%b".to_string()));
+    }
+
+    #[test]
+    fn test_fst_complement1() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c"]);
+        let mut fst1: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let fst2: VectorFst<TropicalWeight> = fst![2 => 2; 0.0];
+        union(&mut fst1, &fst2).unwrap();
+        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1).unwrap();
+        fst.set_input_symbols(symt.clone());
+        fst.set_output_symbols(symt.clone());
+        assert!(fst_accepts(symt.clone(), fst, "c".to_string()))
+    }
+
+    #[test]
+    fn test_fst_complement2() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c"]);
+        let mut fst1: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let fst2: VectorFst<TropicalWeight> = fst![2 => 2; 0.0];
+        union(&mut fst1, &fst2).unwrap();
+        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1).unwrap();
+        fst.set_input_symbols(symt.clone());
+        fst.set_output_symbols(symt.clone());
+        assert!(!fst_accepts(symt.clone(), fst, "a".to_string()))
+    }
+
+    #[test]
+    fn test_fst_complement3() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c"]);
+        let mut fst1: VectorFst<TropicalWeight> = fst![1,2 => 1; 0.0];
+        let fst2: VectorFst<TropicalWeight> = fst![2,3 => 2; 0.0];
+        union(&mut fst1, &fst2).unwrap();
+        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1).unwrap();
+        fst.set_input_symbols(symt.clone());
+        fst.set_output_symbols(symt.clone());
+        assert!(fst_accepts(symt.clone(), fst, "ac".to_string()))
+    }
+
+    #[test]
+    fn test_fst_complement4() {
+        let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c"]);
+        let mut fst1: VectorFst<TropicalWeight> = fst![1,2 => 1; 0.0];
+        let fst2: VectorFst<TropicalWeight> = fst![2,3 => 2; 0.0];
+        union(&mut fst1, &fst2).unwrap();
+        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1).unwrap();
+        fst.set_input_symbols(symt.clone());
+        fst.set_output_symbols(symt.clone());
+        assert!(!fst_accepts(symt.clone(), fst, "ab".to_string()))
     }
 
     #[test]
@@ -959,6 +1266,32 @@ mod tests {
         fst.draw("test2.dot", &DrawingConfig::default()).unwrap();
         let result = apply_fst(symt.clone(), fst, "#ni1hao3#".to_string());
         assert_eq!(result, "#ni{14}hao{4}#".to_string());
+    }
+
+    #[test]
+    fn test_compile_script_basic2() {
+        let symt = Arc::new(symt!["p", "b", "a", "i"]);
+        let (_, (script, _syms)) =
+            parse_script("p -> b / (a|i|b) _ (a|i|b)").expect("Failed to parse script in test");
+        let mut fst =
+            compile_script(symt.clone(), script).expect("Failed to compile script in test");
+        rm_epsilon(&mut fst).unwrap();
+        fst.draw("test.dot", &DrawingConfig::default()).unwrap();
+        let result = apply_fst(symt.clone(), fst, "apbppi".to_string());
+        assert_eq!(result, "abbppi".to_string());
+    }
+
+    #[test]
+    fn test_compile_script_basic3() {
+        let symt = Arc::new(symt!["p", "b", "a", "i"]);
+        let (_, (script, _syms)) =
+            parse_script("p -> b / a _ a").expect("Failed to parse script in test");
+        let mut fst =
+            compile_script(symt.clone(), script).expect("Failed to compile script in test");
+        rm_epsilon(&mut fst).unwrap();
+        fst.draw("test.dot", &DrawingConfig::default()).unwrap();
+        let result = apply_fst(symt.clone(), fst, "papapbipapap".to_string());
+        assert_eq!(result, "pabapbipabap".to_string());
     }
 
     #[test]
@@ -1055,6 +1388,46 @@ mod tests {
             "a -> b / (cd)+ _ ",
             "cdcdca",
             "cdcdca",
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus7() {
+        evaluate_rule(
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
+            "a -> b / (cd)+ _ ",
+            "a",
+            "a",
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus8() {
+        evaluate_rule(
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
+            "a -> b / (cd)+ _ ",
+            "ca",
+            "ca",
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus9() {
+        evaluate_rule(
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
+            "a -> b / _ (cd)+",
+            "acd",
+            "bcd",
+        )
+    }
+
+    #[test]
+    fn test_kleene_plus10() {
+        evaluate_rule(
+            Arc::new(symt!["#", "a", "b", "c", "d"]),
+            "a -> b / _ (cd)+",
+            "a",
+            "a",
         )
     }
 
