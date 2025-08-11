@@ -295,6 +295,15 @@ fn build_fst_replacer(
     langle1: Label,
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
+    let mut sigma_star: VectorFst<TropicalWeight> = sigma_star.clone();
+    let mut new_sigma_star: VectorFst<TropicalWeight> = sigma_star.clone();
+    let start_state: StateId = sigma_star.start().unwrap();
+    let trs = sigma_star.pop_trs(start_state)?;
+    trs.iter()
+        .filter(|tr| tr.ilabel != rangle)
+        .for_each(|tr| new_sigma_star.add_tr(start_state, tr.clone()).unwrap());
+    new_sigma_star.emplace_tr(start_state, rangle, EPS_LABEL, 0.0, start_state)?;
+
     let mut phi_fst: VectorFst<TropicalWeight> = output_to_epsilons(phi_fst);
     let mut psi_fst: VectorFst<TropicalWeight> = input_to_epsilons(psi_fst);
     let rangle_fst: VectorFst<TropicalWeight> = fst![rangle => EPS_LABEL];
@@ -311,12 +320,12 @@ fn build_fst_replacer(
     tr_sort(&mut psi_fst, ILabelCompare {});
     let phi_psi_fst: VectorFst<TropicalWeight> = compose(phi_fst, psi_fst)?;
 
-    let mut fst: VectorFst<TropicalWeight> = sigma_star.clone();
+    let mut fst: VectorFst<TropicalWeight> = new_sigma_star.clone();
     concat(&mut fst, &langle1_fst)?;
     concat(&mut fst, &phi_psi_fst)?;
     concat(&mut fst, &rangle_fst)?;
     closure(&mut fst, ClosureType::ClosureStar);
-    concat(&mut fst, &sigma_star.clone())?;
+    concat(&mut fst, &new_sigma_star.clone())?;
 
     Ok(fst)
 }
@@ -1029,10 +1038,10 @@ mod tests {
         let fst_replacer: VectorFst<TropicalWeight> =
             build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
 
-        let input: String = "aaa".to_string();
+        let input: String = "aa^a$".to_string();
 
         let output: String = apply_fst(symt.clone(), fst_replacer, input);
-        assert_eq!(output, "bbb");
+        assert_eq!(output, "aa^b");
     }
 
     #[test]
@@ -1048,10 +1057,10 @@ mod tests {
         let fst_replacer: VectorFst<TropicalWeight> =
             build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
 
-        let input: String = "acacac".to_string();
+        let input: String = "^a$ca$ca$c".to_string();
 
         let output: String = apply_fst(symt.clone(), fst_replacer, input);
-        assert_eq!(output, "bcbcbc");
+        assert_eq!(output, "^bcacac");
     }
 
     #[test]
@@ -1067,10 +1076,10 @@ mod tests {
         let fst_replacer: VectorFst<TropicalWeight> =
             build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
 
-        let input: String = "acacac".to_string();
+        let input: String = "^ac$^ac$ac".to_string();
 
         let output: String = apply_fst(symt.clone(), fst_replacer, input);
-        assert_eq!(output, "bbb");
+        assert_eq!(output, "^b^bac");
     }
 
     #[test]
@@ -1086,10 +1095,10 @@ mod tests {
         let fst_replacer: VectorFst<TropicalWeight> =
             build_fst_replacer(sigma_star, phi_fst, psi_fst, rangle, langle1, langle2).unwrap();
 
-        let input: String = "bbacbbabbcac".to_string();
+        let input: String = "acacac".to_string();
 
         let output: String = apply_fst(symt.clone(), fst_replacer, input);
-        assert_eq!(output, "bbbbbabbcb");
+        assert_eq!(output, "acacac");
     }
 
     #[test]
