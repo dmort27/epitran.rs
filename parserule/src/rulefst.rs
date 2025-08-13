@@ -404,12 +404,12 @@ fn build_fst_l2(
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
     // Start with a universal acceptor
-    let mut fst_l2 = sigma_star.clone();
+    // let mut fst_l2 = sigma_star.clone();
 
     // Also construct the complement of lambda.
     let left_complement: VectorFst<TropicalWeight> =
         fst_complement(symt.clone(), lambda_fst, langle2)?;
-
+    // connect(&mut left_complement)?;
     // left_complement.draw(
     //     "build_fst_l2_complement.dot",
     //     &DrawingConfig {
@@ -428,24 +428,28 @@ fn build_fst_l2(
 
     // We also need to create a transducer for the langle symbol
     let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 0.0];
-    // fst_l2.draw(
-    //     "build_fst_l2.dot",
-    //     &DrawingConfig {
-    //         vertical: true,
-    //         size: Some((6.0, 4.0)),
-    //         title: "l2 FST".to_string(),
-    //         portrait: false,
-    //         ranksep: Some(1.0),
-    //         nodesep: Some(1.0),
-    //         fontsize: 12,
-    //         acceptor: false,
-    //         show_weight_one: true,
-    //         print_weight: true,
-    //     },
-    // )?;
 
     // Add the complment of lambda to the universal acceptor.
-    concat(&mut fst_l2, &left_complement)?;
+    // concat(&mut fst_l2, &left_complement)?;
+
+    let mut fst_l2 = left_complement;
+
+    fst_l2.draw(
+        "build_fst_l2.dot",
+        &DrawingConfig {
+            vertical: true,
+            size: Some((6.0, 4.0)),
+            title: "l2 FST with sigma* and !lambda".to_string(),
+            portrait: false,
+            ranksep: Some(1.0),
+            nodesep: Some(1.0),
+            fontsize: 12,
+            acceptor: false,
+            show_weight_one: true,
+            print_weight: true,
+        },
+    )?;
+
     // Then add the transducer for langle2.
     concat(&mut fst_l2, &consume_langle2)?;
     // Take the closure of the resulting FST
@@ -478,6 +482,10 @@ fn fst_complement(
     )?;
     let states: Vec<StateId> = fst.states_iter().collect();
     let sink: StateId = fst.add_state();
+    symt.clone()
+        .labels()
+        .filter(|l| *l != EPS_LABEL)
+        .for_each(|l| fst.emplace_tr(sink, l, l, 10.0, sink).unwrap());
     fst.set_final(sink, 0.0)?;
     states.iter().for_each(|s| {
         let leaving: HashSet<Label> = fst
@@ -1753,7 +1761,7 @@ c -> d
             rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:#?}", fst);
         // let _ = fst.draw(
@@ -1783,7 +1791,7 @@ c -> d
             rule_no_env("a -> e").expect("Failed to parse rule_no_env in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(apply_fst(symt, fst, "#aa#".to_string()), "#ee#".to_string());
@@ -1798,7 +1806,7 @@ c -> d
             rule("p -> b / a _ a").expect("Failed to parse rule in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not create rule");
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(
@@ -1816,7 +1824,7 @@ c -> d
             rule("p -> b / a _ a").expect("Failed to parse rule in test");
         // println!("rewrite_rule = {:?}", rewrite_rule);
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         // println!("fst.num_states()={:?}", fst.num_states());
         // println!("fst={:?}", fst);
         assert_eq!(
@@ -1832,7 +1840,7 @@ c -> d
         let (_, (rewrite_rule, _syms)) =
             rule("(p|b) -> i / a _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         assert_eq!(
             apply_fst(symt, fst, "#apab#".to_string()),
             "#aiai#".to_string()
@@ -1846,7 +1854,7 @@ c -> d
         let (_, (rewrite_rule, _syms)) =
             rule("a -> i / [pb] _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         assert_eq!(
             apply_fst(symt, fst, "#pabaaa#".to_string()),
             "#pibiaa#".to_string()
@@ -1860,7 +1868,7 @@ c -> d
         let (_, (rewrite_rule, _syms)) =
             rule("a -> i / [^pb] _ ").expect("Failed to parse rule in test");
         let fst: VectorFst<TropicalWeight> =
-            rule_fst(symt.clone(), macros, rewrite_rule).expect("Something");
+            rule_fst(symt.clone(), macros, rewrite_rule).expect("Could not construct rule");
         assert_eq!(
             apply_fst(symt, fst, "#pabaa#".to_string()),
             "#pabai#".to_string()
