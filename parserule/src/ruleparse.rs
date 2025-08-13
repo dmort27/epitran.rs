@@ -5,8 +5,7 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{
-        alpha1, char as nom_char, multispace0, newline, none_of,
-        one_of, space0,
+        alpha1, char as nom_char, multispace0, newline, none_of, one_of, space0,
     },
     combinator::{map_res, recognize, success, value},
     multi::{many1, separated_list0, separated_list1},
@@ -373,11 +372,10 @@ pub fn parse_script(input: &str) -> IResult<String, (Vec<Statement>, HashSet<Str
         ),
         multispace0,
     ));
-    let (input, (_, statements_and_sets, _)) = parser.parse(input)
-        .unwrap_or_else(|e| {
-            println!("{e}: {}", "Parser error!".red());
-            ("", ("", Vec::<(Statement, HashSet<String>)>::new(), ""))
-        });
+    let (input, (_, statements_and_sets, _)) = parser.parse(input).unwrap_or_else(|e| {
+        println!("{e}: {}", "Parser error!".red());
+        ("", ("", Vec::<(Statement, HashSet<String>)>::new(), ""))
+    });
     let mut union_of_sets = HashSet::new();
     for (_, set) in statements_and_sets.iter() {
         union_of_sets.extend(set);
@@ -860,6 +858,12 @@ mod tests {
     #[test]
     fn test_parsable_by_script_rule1() {
         let (input, _) = parse_script("a -> b").expect("Could not parse");
+        debug_assert_eq!(input, "")
+    }
+
+    #[test]
+    fn test_parsable_by_script_two_simpel_rules() {
+        let (input, _) = parse_script("a -> b\nb -> c").expect("Could not parse");
         debug_assert_eq!(input, "")
     }
 

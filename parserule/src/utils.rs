@@ -1,3 +1,7 @@
+use rustfst::algorithms::determinize::{
+    determinize_with_config, DeterminizeConfig, DeterminizeType,
+};
+
 use rustfst::algorithms::{rm_epsilon::rm_epsilon, tr_sum};
 use rustfst::fst_impls::VectorFst;
 use rustfst::prelude::*;
@@ -8,15 +12,21 @@ pub fn optimize_fst(
 ) -> Result<(), Box<dyn std::error::Error>> {
     rm_epsilon(fst)?;
     tr_sum(fst);
-    // minimize_with_config(fst, MinimizeConfig { delta: 1e-4, allow_nondet: true })?;
-    /*
-    push_weights_with_config(
+    let dfst: VectorFst<TropicalWeight> = determinize_with_config(
         fst,
-        ReweightType::ReweightToInitial,
-        PushWeightsConfig::default(),
+        DeterminizeConfig {
+            delta: 1.0e-5,
+            det_type: DeterminizeType::DeterminizeNonFunctional,
+        },
     )?;
-    // */
-    // *fst = det_fst;
+    // minimize_with_config(
+    //     &mut dfst,
+    //     MinimizeConfig {
+    //         delta: 1e-4,
+    //         allow_nondet: false,
+    //     },
+    // )?;
+    *fst = dfst;
     Ok(())
 }
 
