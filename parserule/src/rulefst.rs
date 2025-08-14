@@ -744,29 +744,33 @@ fn fst_complement(
             det_type: DeterminizeType::DeterminizeNonFunctional,
         },
     )?;
-    
+
     let states: Vec<StateId> = fst.states_iter().collect();
-    
+
     // If the original FST has no states after processing, create a complement that accepts everything
     if states.is_empty() {
         let mut complement_fst: VectorFst<TropicalWeight> = VectorFst::new();
         let start_state = complement_fst.add_state();
         complement_fst.set_start(start_state)?;
         complement_fst.set_final(start_state, 0.0)?;
-        
+
         // Add self-loops for all symbols except langle2
         symt.clone()
             .labels()
-            .filter(|l| *l != EPS_LABEL && *l != langle2)
-            .for_each(|l| complement_fst.emplace_tr(start_state, l, l, 0.0, start_state).unwrap());
-        
+            .filter(|l| *l != EPS_LABEL && !exclude.contains(l))
+            .for_each(|l| {
+                complement_fst
+                    .emplace_tr(start_state, l, l, 0.0, start_state)
+                    .unwrap()
+            });
+
         // Set the symbol tables to match the extended symbol table
         complement_fst.set_input_symbols(symt.clone());
         complement_fst.set_output_symbols(symt.clone());
-        
+
         return Ok(complement_fst);
     }
-    
+
     let sink: StateId = fst.add_state();
     symt.clone()
         .labels()
@@ -790,11 +794,11 @@ fn fst_complement(
             fst.set_final(*s, 0.0).unwrap();
         }
     });
-    
+
     // Set the symbol tables to match the extended symbol table
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
-    
+
     Ok(fst)
 }
 
@@ -1096,12 +1100,12 @@ fn node_fst(
 /// Returns true if the wFST has a cycle. Otherwise, it returns false.
 pub fn is_cyclic(fst: &VectorFst<TropicalWeight>) -> bool {
     let fst = fst.clone();
-    
+
     // If FST has no states, it can't have cycles
     if fst.num_states() == 0 {
         return false;
     }
-    
+
     let mut stack: Vec<(Action, StateId)> = Vec::new();
     // println!("num states={}", fst.num_states());
     // println!("start state={:?}", fst.start());
@@ -1310,11 +1314,11 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
         .string_paths_iter()
         .unwrap()
         .collect::<Vec<StringPath<TropicalWeight>>>();
-    
+
     if paths.is_empty() {
         return input; // Return original input if no paths found
     }
-    
+
     paths[0]
         .olabels()
         .iter()
