@@ -207,7 +207,7 @@ pub fn rule_fst(
     fst_l1.set_input_symbols(symt_ext_ref.clone());
     fst_l2.set_input_symbols(symt_ext_ref.clone());
 
-    
+
     // fst_r.draw("partial_r.dot", &DrawingConfig::default())?;
     // fst_f.draw("partial_f.dot", &DrawingConfig::default())?;
     // fst_replacer.draw("partial_repl.dot", &DrawingConfig::default())?;
@@ -225,7 +225,7 @@ pub fn rule_fst(
     output =
         compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_replacer)?;
     output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l1)?;
-    
+
     // Skip fst_l2 composition - it appears to be causing issues with FST composition
     // and the tests pass without it, suggesting the left context constraint is
     // already enforced by other parts of the algorithm (likely fst_l1)
@@ -434,19 +434,19 @@ fn build_fst_l2(
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
     let exclude: HashSet<Label> = HashSet::from([langle2]);
-    
+
     // Check if lambda_fst accepts only epsilon
-    let lambda_accepts_epsilon = lambda_fst.num_states() == 2 && 
+    let lambda_accepts_epsilon = lambda_fst.num_states() == 2 &&
         lambda_fst.start().is_some() && {
             let start = lambda_fst.start().unwrap();
             let trs = lambda_fst.get_trs(start).unwrap();
             // Check if there's exactly one epsilon transition to a final state
-            trs.len() == 1 && 
-            trs[0].ilabel == EPS_LABEL && 
+            trs.len() == 1 &&
+            trs[0].ilabel == EPS_LABEL &&
             trs[0].olabel == EPS_LABEL &&
             lambda_fst.is_final(trs[0].nextstate).unwrap_or(false)
         };
-    
+
     let mut fst: VectorFst<TropicalWeight> = if lambda_accepts_epsilon {
         // For epsilon left context, (Σ* - ε) = Σ+
         // Create Σ+ by cloning Σ* and removing the final weight from start state
@@ -656,7 +656,7 @@ fn automaton_complement(
     exclude: HashSet<Label>,
 ) -> Result<VectorFst<TropicalWeight>> {
     let mut fst = fst.clone();
-    
+
     // Remove epsilon transitions and determinize first
     rm_epsilon(&mut fst)?;
     fst = determinize_with_config(
@@ -798,16 +798,13 @@ fn fst_complement(
         symt.clone()
             .labels()
             .filter(|l| *l != EPS_LABEL && !exclude.contains(l))
-<<<<<<< HEAD
             .for_each(|l| {
                 complement_fst
                     .emplace_tr(start_state, l, l, 0.0, start_state)
                     .unwrap()
             });
 
-=======
-            .for_each(|l| complement_fst.emplace_tr(start_state, l, l, 0.0, start_state).unwrap());
-        
+
 >>>>>>> b332efd44dbde773c8e77d01d1179fb60cbd8b24
         // Set the symbol tables to match the extended symbol table
         complement_fst.set_input_symbols(symt.clone());
@@ -2262,10 +2259,10 @@ c -> d
         // );
         let result = apply_fst(symt.clone(), fst.clone(), "#a#".to_string());
         println!("Input: #a#, Expected: #e#, Got: {}", result);
-        
+
         // Let's also check if the FST has any states
         println!("FST has {} states", fst.num_states());
-        
+
         assert_eq!(result, "#e#".to_string());
     }
 
