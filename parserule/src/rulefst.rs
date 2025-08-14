@@ -19,6 +19,7 @@ use rustfst::prelude::determinize::{determinize_with_config, DeterminizeConfig, 
 use rustfst::prelude::rm_epsilon::rm_epsilon;
 use rustfst::prelude::*;
 use rustfst::utils::{acceptor, transducer};
+
 // use rustfst::DrawingConfig;
 use std::char;
 use std::cmp::Ordering;
@@ -428,73 +429,311 @@ fn build_fst_l2(
     lambda_fst: VectorFst<TropicalWeight>,
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
-    // Start with a universal acceptor
-    // let mut fst_l2 = sigma_star.clone();
+    let mut fst: VectorFst<TropicalWeight> = VectorFst::new();
 
-    // Also construct the complement of lambda.
-    let left_complement: VectorFst<TropicalWeight> =
-        fst_complement(symt.clone(), lambda_fst, langle2)?;
-    // connect(&mut left_complement)?;
-    // left_complement.draw(
-    //     "build_fst_l2_complement.dot",
-    //     &DrawingConfig {
-    //         vertical: true,
-    //         size: Some((6.0, 4.0)),
-    //         title: "Complement".to_string(),
-    //         portrait: false,
-    //         ranksep: Some(2.0),
-    //         nodesep: Some(2.0),
-    //         fontsize: 12,
-    //         acceptor: true,
-    //         show_weight_one: true,
-    //         print_weight: true,
-    //     },
-    // )?;
+    let exclude: HashSet<Label> = HashSet::from([langle2]);
+    let lambda_bar_fst: VectorFst<TropicalWeight> =
+        construct_product_automaton(symt, sigma_star.clone(), lambda_fst, exclude)?;
 
-    // We also need to create a transducer for the langle symbol
-    let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 0.0];
+    concat(&mut fst, &lambda_bar_fst)?;
 
-    // Add the complment of lambda to the universal acceptor.
-    // concat(&mut fst_l2, &left_complement)?;
+    let langle2_fst: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL];
 
-    let mut fst_l2 = left_complement;
+    concat(&mut fst, &langle2_fst)?;
 
-    fst_l2.draw(
-        "build_fst_l2.dot",
-        &DrawingConfig {
-            vertical: true,
-            size: Some((6.0, 4.0)),
-            title: "l2 FST with sigma* and !lambda".to_string(),
-            portrait: false,
-            ranksep: Some(1.0),
-            nodesep: Some(1.0),
-            fontsize: 12,
-            acceptor: false,
-            show_weight_one: true,
-            print_weight: true,
-        },
-    )?;
+    concat(&mut fst, &sigma_star.clone())?;
 
-    // Then add the transducer for langle2.
-    concat(&mut fst_l2, &consume_langle2)?;
-    // Take the closure of the resulting FST
-    closure(&mut fst_l2, ClosureType::ClosureStar);
-    // Then compose a unversal acceptor.
-    concat(&mut fst_l2, &sigma_star)?;
-
-    // Remove the epsilon transitions.
-    rm_epsilon(&mut fst_l2)?;
-    Ok(fst_l2)
+    Ok(fst)
 }
+
+// fn build_fst_l2(
+//     symt: Arc<SymbolTable>,
+//     sigma_star: VectorFst<TropicalWeight>,
+//     lambda_fst: VectorFst<TropicalWeight>,
+//     langle2: Label,
+// ) -> Result<VectorFst<TropicalWeight>> {
+//     // Start with a universal acceptor
+//     // let mut fst_l2 = sigma_star.clone();
+
+//     // Also construct the complement of lambda.
+//     let left_complement: VectorFst<TropicalWeight> =
+//         fst_complement(symt.clone(), lambda_fst, langle2)?;
+//     // connect(&mut left_complement)?;
+//     // left_complement.draw(
+//     //     "build_fst_l2_complement.dot",
+//     //     &DrawingConfig {
+//     //         vertical: true,
+//     //         size: Some((6.0, 4.0)),
+//     //         title: "Complement".to_string(),
+//     //         portrait: false,
+//     //         ranksep: Some(2.0),
+//     //         nodesep: Some(2.0),
+//     //         fontsize: 12,
+//     //         acceptor: true,
+//     //         show_weight_one: true,
+//     //         print_weight: true,
+//     //     },
+//     // )?;
+
+//     // We also need to create a transducer for the langle symbol
+//     let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 0.0];
+
+//     // Add the complment of lambda to the universal acceptor.
+//     // concat(&mut fst_l2, &left_complement)?;
+
+//     let mut fst_l2 = left_complement;
+
+//     fst_l2.draw(
+//         "build_fst_l2.dot",
+//         &DrawingConfig {
+//             vertical: true,
+//             size: Some((6.0, 4.0)),
+//             title: "l2 FST with sigma* and !lambda".to_string(),
+//             portrait: false,
+//             ranksep: Some(1.0),
+//             nodesep: Some(1.0),
+//             fontsize: 12,
+//             acceptor: false,
+//             show_weight_one: true,
+//             print_weight: true,
+//         },
+//     )?;
+
+//     // Then add the transducer for langle2.
+//     concat(&mut fst_l2, &consume_langle2)?;
+//     // Take the closure of the resulting FST
+//     closure(&mut fst_l2, ClosureType::ClosureStar);
+//     // Then compose a unversal acceptor.
+//     concat(&mut fst_l2, &sigma_star)?;
+
+//     // Remove the epsilon transitions.
+//     rm_epsilon(&mut fst_l2)?;
+//     Ok(fst_l2)
+// }
+
+pub fn difference_automaton(
+    symt: Arc<SymbolTable>,
+    fst_a: VectorFst<TropicalWeight>,
+    fst_b: VectorFst<TropicalWeight>,
+    exclude: HashSet<Label>,
+) -> Result<VectorFst<TropicalWeight>> {
+    let fst_b_compl: VectorFst<TropicalWeight> =
+        automaton_complement(symt.clone(), fst_b, exclude.clone())?;
+    let fst: VectorFst<TropicalWeight> =
+        construct_product_automaton(symt, fst_a, fst_b_compl, exclude)?;
+    Ok(fst)
+}
+
+/// Compute an acceptor which recognizes the difference between the langauges recognized by automaton `fst1` and `fst2
+///
+/// Arguments
+/// * symt: a Arc reference to a SymbolTable, describing the alphabet
+/// * fst_a: a finite state acceptor a recognizing language A
+/// * fst_b: a finite state acceptor b recognizing language B
+/// * langles: a label to exclude from universal acceptor
+///
+/// Returns
+/// A finite state acceptor that regonizes A ∩ B̄ = A - B
+///
+#[allow(unused_assignments)]
+#[allow(dead_code)]
+fn construct_product_automaton(
+    symt: Arc<SymbolTable>,
+    fst_a: VectorFst<TropicalWeight>,
+    fst_b: VectorFst<TropicalWeight>,
+    exclude: HashSet<Label>,
+) -> Result<VectorFst<TropicalWeight>> {
+    // Initialize produce automaton
+    let mut fst_c: VectorFst<TropicalWeight> = VectorFst::new();
+
+    // Compute alphabet
+    // let alphabet: HashSet<>  = symt.labels().collect();
+
+    // Set symbol table for fst_c
+    fst_c.set_input_symbols(symt.clone());
+    fst_c.set_output_symbols(symt.clone());
+
+    // States are a cartesian product Q_a × Q_b̄
+    let mut state_map: HashMap<(StateId, StateId), StateId> = HashMap::new();
+
+    // Create all possible state pairs
+    for q_a in fst_a.states_iter() {
+        for q_b in fst_b.states_iter() {
+            let pair = (q_a, q_b);
+            let new_state = fst_c.add_state();
+            state_map.insert(pair, new_state);
+        }
+    }
+
+    // Set initial state
+    let start_a = fst_a.start().unwrap();
+    let start_b_compl: StateId = fst_b.start().unwrap();
+    let initial_pair = (start_a, start_b_compl);
+    let start_c = *state_map.get(&initial_pair).unwrap();
+    fst_c.set_start(start_c)?;
+
+    let mut current_state: StateId = 0;
+    let mut next_a: StateId = 0;
+    let mut next_b: StateId = 0;
+    let mut next_pair: (StateId, StateId) = (0, 0);
+    let mut next_state: StateId = 0;
+
+    // Define transition function for `fst_c`
+    for ((q_a, q_b), _) in state_map.iter() {
+        current_state = *state_map.get(&(*q_a, *q_b)).unwrap();
+
+        // Get labels from symbol table
+        for label in symt.labels().filter(|l| !exclude.contains(l)) {
+            // Get transitions from both automata
+            if let Some(tr_a) = fst_a
+                .get_trs(*q_a)
+                .unwrap()
+                .iter()
+                .find(|tr| tr.ilabel == label)
+            {
+                next_a = tr_a.nextstate;
+            } else {
+                continue;
+            }
+
+            if let Some(tr_b) = fst_b
+                .get_trs(*q_b)
+                .unwrap()
+                .iter()
+                .find(|tr| tr.ilabel == label)
+            {
+                next_b = tr_b.nextstate;
+            } else {
+                continue;
+            }
+
+            // Create transition to the corresponding state
+            next_pair = (next_a, next_b);
+            next_state = *state_map.get(&next_pair).unwrap();
+            fst_c.emplace_tr(current_state, label, label, 0.0, next_state)?;
+        }
+    }
+
+    // Set final states
+    for ((q_a, q_b), &state_id) in state_map.iter() {
+        if fst_a.is_final(*q_a).unwrap_or(false) && fst_b.is_final(*q_b).unwrap_or(false) {
+            fst_c.set_final(state_id, 0.0)?;
+        }
+    }
+
+    Ok(fst_c)
+}
+
+fn automaton_complement(
+    symt: Arc<SymbolTable>,
+    fst: VectorFst<TropicalWeight>,
+    exclude: HashSet<Label>,
+) -> Result<VectorFst<TropicalWeight>> {
+    let mut fst = fst.clone();
+
+    // Collect original states before adding sink
+    let original_states: Vec<StateId> = fst.states_iter().collect();
+
+    // Add dead state (sink)
+    let sink = fst.add_state();
+
+    let alphabet: HashSet<Label> = symt.labels().filter(|l| !exclude.contains(&l)).collect();
+
+    // Add self-loops to sink for all alphabet symbols
+    alphabet
+        .iter()
+        .for_each(|l| fst.emplace_tr(sink, *l, *l, 0.0, sink).unwrap());
+
+    // Add missing transitions to sink for original states
+    original_states.iter().for_each(|s| {
+        let existing_labels: HashSet<Label> = fst
+            .get_trs(*s)
+            .unwrap()
+            .iter()
+            .map(|tr| tr.ilabel)
+            .collect();
+        alphabet
+            .iter()
+            .filter(|&l| !existing_labels.contains(&l))
+            .for_each(|l| fst.emplace_tr(*s, *l, *l, 0.0, sink).unwrap());
+    });
+
+    // Flip final states (only for original states, sink remains non-final)
+    for state in original_states {
+        if fst.is_final(state)? {
+            // Remove final weight (make non-final)
+            fst.delete_final_weight(state)?;
+        } else {
+            // Make final with weight 0.0
+            fst.set_final(state, 0.0)?;
+        }
+    }
+
+    // Ensure sink is not final (it should be non-final by default)
+    // This is just to be explicit
+    if fst.is_final(sink)? {
+        fst.delete_final_weight(sink)?;
+    }
+
+    Ok(fst)
+}
+
+// fn automaton_complement(
+//     symt: Arc<SymbolTable>,
+//     fst: VectorFst<TropicalWeight>,
+//     exclude: HashSet<Label>,
+// ) -> Result<VectorFst<TropicalWeight>> {
+//     let mut fst = fst.clone();
+//     rm_epsilon(&mut fst)?;
+//     let mut fst: VectorFst<TropicalWeight> = determinize_with_config(
+//         &fst,
+//         DeterminizeConfig {
+//             delta: 1.0e-4,
+//             det_type: DeterminizeType::DeterminizeNonFunctional,
+//         },
+//     )?;
+
+//     let states: Vec<StateId> = fst.states_iter().collect();
+
+//     let sink = fst.add_state();
+
+//     let alphabet: HashSet<Label> = symt.labels().filter(|l| !exclude.contains(&l)).collect();
+
+//     alphabet
+//         .iter()
+//         .for_each(|l| fst.emplace_tr(sink, *l, *l, 0.0, sink).unwrap());
+
+//     states.iter().filter(|&s| *s != sink).for_each(|s| {
+//         let compl_tr_ilabels: HashSet<Label> = fst
+//             .get_trs(*s)
+//             .unwrap()
+//             .iter()
+//             .map(|tr| tr.ilabel)
+//             .collect();
+//         alphabet
+//             .iter()
+//             .filter(|&l| !compl_tr_ilabels.contains(&l))
+//             .for_each(|l| fst.emplace_tr(*s, *l, *l, 0.0, sink).unwrap());
+//     });
+
+//     for state in states {
+//         if fst.is_final(state)? {
+//             fst.delete_final_weight(state)?;
+//         } else {
+//             fst.set_final(state, 0.0)?;
+//         }
+//     }
+//     Ok(fst)
+// }
 
 fn fst_complement(
     symt: Arc<SymbolTable>,
     fst: VectorFst<TropicalWeight>,
-    langle2: Label,
+    exclude: HashSet<Label>,
 ) -> Result<VectorFst<TropicalWeight>> {
     let sigma: HashSet<Label> = symt
         .labels()
-        .filter(|l| *l != EPS_LABEL && *l != langle2)
+        .filter(|l| *l != EPS_LABEL && exclude.contains(l))
         .collect();
     let mut fst: VectorFst<TropicalWeight> = fst.clone();
     rm_epsilon(&mut fst)?;
@@ -1063,6 +1302,112 @@ mod tests {
     use rustfst::algorithms::rm_epsilon::rm_epsilon;
 
     #[test]
+    fn test_check_path_in_fst() {
+        let fst: VectorFst<TropicalWeight> = fst![1,2,3; 0.0];
+        assert!(check_path_in_fst(
+            &fst,
+            &FstPath {
+                ilabels: vec![1, 2, 3],
+                olabels: vec![1, 2, 3],
+                weight: TropicalWeight::one(),
+            }
+        ))
+    }
+
+    #[test]
+    fn test_automaton_complement_should_rej1() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2 => 1, 2; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let fst = automaton_complement(symt.clone(), fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, fst, "ab".to_string()))
+    }
+
+    #[test]
+    fn test_automaton_complement_should_acc1() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2 => 1, 2; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let fst = automaton_complement(symt.clone(), fst, exclude).unwrap();
+        assert!(fst_accepts(symt, fst, "abcb".to_string()))
+    }
+
+    #[test]
+    fn test_automaton_complement_should_rej2() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let fst = automaton_complement(symt.clone(), fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, fst, "a".to_string()))
+    }
+
+    #[test]
+    fn test_automaton_complement_should_acc2() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2, 3 => 1, 2, 3; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let fst = automaton_complement(symt.clone(), fst, exclude).unwrap();
+        assert!(fst_accepts(symt, fst, "abca".to_string()))
+    }
+
+    #[test]
+    fn test_difference_automaton_should_acc1() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2 => 1, 2; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let sigma_star = weighted_sigma_star(symt.clone(), 0.0).unwrap();
+        let diff_fst = difference_automaton(symt.clone(), sigma_star, fst, exclude).unwrap();
+        assert!(check_path_in_fst(
+            &diff_fst,
+            &FstPath {
+                ilabels: vec![2, 1],
+                olabels: vec![2, 1],
+                weight: TropicalWeight::one(),
+            }
+        ))
+    }
+
+    #[test]
+    fn test_difference_automaton_should_rej1() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2, 3 => 1, 2, 3; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let sigma_star = weighted_sigma_star(symt.clone(), 0.0).unwrap();
+        let diff_fst = difference_automaton(symt.clone(), sigma_star, fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, diff_fst, "abc".to_string()))
+    }
+
+    #[test]
+    fn test_difference_automaton_should_rej2() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1, 2 => 1, 2; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let sigma_star = weighted_sigma_star(symt.clone(), 0.0).unwrap();
+        let diff_fst = difference_automaton(symt.clone(), sigma_star, fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, diff_fst, "ab".to_string()))
+    }
+
+    #[test]
+    fn test_difference_automaton_should_rej3() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let sigma_star = weighted_sigma_star(symt.clone(), 0.0).unwrap();
+        let diff_fst = difference_automaton(symt.clone(), sigma_star, fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, diff_fst, "a".to_string()))
+    }
+
+    #[test]
+    fn test_difference_automaton_should_rej4() {
+        let symt = Arc::new(symt!["a", "b", "c"]);
+        let fst: VectorFst<TropicalWeight> = fst![EPS_LABEL => EPS_LABEL; 0.0];
+        let exclude: HashSet<Label> = HashSet::new();
+        let sigma_star = weighted_sigma_star(symt.clone(), 0.0).unwrap();
+        let diff_fst = difference_automaton(symt.clone(), sigma_star, fst, exclude).unwrap();
+        assert!(!fst_accepts(symt, diff_fst, "".to_string()))
+    }
+
+    #[test]
     fn test_component_build_fst_r1_a() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "d", "#", "$", "^", "%"]);
         let rho_fst: VectorFst<TropicalWeight> = fst![1 => 1];
@@ -1459,48 +1804,56 @@ mod tests {
     }
 
     #[test]
-    fn test_fst_complement1() {
+    fn test_fst_complement_should_acc1() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let mut fst1: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
         let fst2: VectorFst<TropicalWeight> = fst![2 => 2; 0.0];
         union(&mut fst1, &fst2).unwrap();
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(fst_accepts(symt.clone(), fst, "c".to_string()))
     }
 
     #[test]
-    fn test_fst_complement2() {
+    fn test_fst_complement_should_rej2() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let mut fst1: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
         let fst2: VectorFst<TropicalWeight> = fst![2 => 2; 0.0];
         union(&mut fst1, &fst2).unwrap();
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(!fst_accepts(symt.clone(), fst, "a".to_string()))
     }
 
     #[test]
-    fn test_fst_complement3() {
+    fn test_fst_complement_should_acc3() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let mut fst1: VectorFst<TropicalWeight> = fst![1,2 => 1; 0.0];
         let fst2: VectorFst<TropicalWeight> = fst![2,3 => 2; 0.0];
         union(&mut fst1, &fst2).unwrap();
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(fst_accepts(symt.clone(), fst, "ac".to_string()))
     }
 
     #[test]
-    fn test_fst_complement4() {
+    fn test_fst_complement_should_rej4() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let mut fst1: VectorFst<TropicalWeight> = fst![1,2 => 1; 0.0];
         let fst2: VectorFst<TropicalWeight> = fst![2,3 => 2; 0.0];
         union(&mut fst1, &fst2).unwrap();
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(!fst_accepts(symt.clone(), fst, "ab".to_string()))
@@ -1510,17 +1863,21 @@ mod tests {
     fn test_fst_complement_accepts_one_char1() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let fst1: VectorFst<TropicalWeight> = fst![2 => 2; 0.0];
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(fst_accepts(symt.clone(), fst, "a".to_string()))
     }
 
     #[test]
-    fn test_fst_complement_one_char1() {
+    fn test_fst_complement_rejects_one_char1() {
         let symt: Arc<SymbolTable> = Arc::new(symt!["a", "b", "c", "%"]);
         let fst1: VectorFst<TropicalWeight> = fst![1 => 1; 0.0];
-        let mut fst: VectorFst<TropicalWeight> = fst_complement(symt.clone(), fst1, 4).unwrap();
+        let exclude: HashSet<Label> = HashSet::from([4]);
+        let mut fst: VectorFst<TropicalWeight> =
+            fst_complement(symt.clone(), fst1, exclude).unwrap();
         fst.set_input_symbols(symt.clone());
         fst.set_output_symbols(symt.clone());
         assert!(!fst_accepts(symt.clone(), fst, "a".to_string()))
