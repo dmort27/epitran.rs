@@ -130,6 +130,7 @@ pub fn rule_fst(
 ) -> Result<VectorFst<TropicalWeight>> {
     let mut symt_ext = symt.as_ref().clone();
     let rangle = symt_ext.add_symbol("$");
+    let symt_with_rangle: Arc<SymbolTable> = Arc::new(symt_ext.clone());
     let langle1 = symt_ext.add_symbol("^");
     let langle2 = symt_ext.add_symbol("%");
     let symt_ext_ref = Arc::new(symt_ext);
@@ -157,11 +158,12 @@ pub fn rule_fst(
         _ => node_fst(symt.clone(), macros, rule.right)?,
     };
     let sigma_star: VectorFst<TropicalWeight> = weighted_sigma_star(symt.clone(), 1.0)?;
-    let mut sigma_star_with_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
-    let q0 = sigma_star_with_rangle.start().unwrap();
-    sigma_star_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 1.0, q0))?;
+    let sigma_star_with_rangle: VectorFst<TropicalWeight> =
+        weighted_sigma_star(symt_with_rangle, 1.0)?;
+    // let q0 = sigma_star_with_rangle.start().unwrap();
+    // sigma_star_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 1.0, q0))?;
 
-    rho_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
+    // rho_fst.draw("partial_rho.dot", &DrawingConfig::default())?;
 
     let mut fst_r: VectorFst<TropicalWeight> =
         build_fst_r(sigma_star.clone(), rho_fst.clone(), rangle)?;
@@ -247,7 +249,12 @@ pub fn rule_fst(
     // output.draw("rulefst_opt.dot", &DrawingConfig::default())?;
     rm_epsilon(&mut output)?;
 
+    output.set_input_symbols(symt_ext_ref.clone());
+    output.set_output_symbols(symt_ext_ref);
+
     // println!("Successfully removed epsilon transitions");
+
+    output.draw("output_fst.dot", &DrawingConfig::default())?;
 
     Ok(output)
 }
@@ -275,7 +282,13 @@ fn build_fst_f(
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
     let mut sigma_star_with_rangle: VectorFst<TropicalWeight> = sigma_star.clone();
-    let q0 = sigma_star_with_rangle.start().unwrap();
+    let q0 = sigma_star_with_rangle.start().unwrap_or_else(|| {
+        eprintln!(
+            "sigma_star_with_rangle lacks a start state. It has {}",
+            sigma_star_with_rangle.num_states()
+        );
+        0
+    });
     sigma_star_with_rangle.add_tr(q0, Tr::new(rangle, rangle, 0.0, q0))?;
 
     let mut insert_langle: VectorFst<TropicalWeight> = fst![EPS_LABEL => langle1; 0.0];
@@ -304,7 +317,13 @@ fn build_fst_replacer(
 ) -> Result<VectorFst<TropicalWeight>> {
     let mut sigma_star: VectorFst<TropicalWeight> = sigma_star.clone();
     let mut new_sigma_star: VectorFst<TropicalWeight> = sigma_star.clone();
-    let start_state: StateId = sigma_star.start().unwrap();
+    let start_state: StateId = sigma_star.start().unwrap_or_else(|| {
+        eprintln!(
+            "sigma_star lacks a start state. It has {}",
+            sigma_star.num_states()
+        );
+        0
+    });
     let trs = sigma_star.pop_trs(start_state)?;
     trs.iter()
         .filter(|tr| tr.ilabel != rangle)
@@ -385,7 +404,13 @@ fn build_fst_l1(
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
     let mut sigma_star: VectorFst<TropicalWeight> = sigma_star.clone();
-    let start_state: StateId = sigma_star.start().unwrap();
+    let start_state: StateId = sigma_star.start().unwrap_or_else(|| {
+        eprintln!(
+            "sigma_star lacks a start state. It has {}",
+            sigma_star.num_states()
+        );
+        0
+    });
     sigma_star.emplace_tr(start_state, langle2, langle2, 0.0, start_state)?;
     let consume_langle1: VectorFst<TropicalWeight> = fst![langle1 => EPS_LABEL; 0.0];
     let mut fst_l1 = sigma_star.clone();
@@ -999,7 +1024,10 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
     composed_fst.set_input_symbols(symt.clone());
     composed_fst.set_output_symbols(symt.clone());
 
-    let shortest: VectorFst<TropicalWeight> = shortest_path(&composed_fst).unwrap();
+    let shortest: VectorFst<TropicalWeight> = shortest_path(&composed_fst).unwrap_or_else(|e| {
+        eprintln!("{e}: Could not compute shortest path.");
+        VectorFst::new()
+    });
 
     shortest
         .string_paths_iter()
@@ -1020,7 +1048,10 @@ pub fn apply_fst(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, input: 
 
 pub fn fst_accepts(symt: Arc<SymbolTable>, fst: VectorFst<TropicalWeight>, string: String) -> bool {
     let linear_automaton: VectorFst<TropicalWeight> = string_to_linear_automaton(symt, &string);
-    let composed: VectorFst<TropicalWeight> = compose(linear_automaton, fst).unwrap();
+    let composed: VectorFst<TropicalWeight> = compose(linear_automaton, fst).unwrap_or_else(|e| {
+        eprintln!("{e}: Could not compose linear_automaton and fst. Returning empty FST.");
+        VectorFst::new()
+    });
     composed.num_states() > 0
 }
 
