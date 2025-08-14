@@ -12,21 +12,21 @@ pub fn optimize_fst(
 ) -> Result<(), Box<dyn std::error::Error>> {
     rm_epsilon(fst)?;
     tr_sum(fst);
-    let dfst: VectorFst<TropicalWeight> = determinize_with_config(
-        fst,
-        DeterminizeConfig {
-            delta: 1.0e-5,
-            det_type: DeterminizeType::DeterminizeNonFunctional,
-        },
-    )?;
-    // minimize_with_config(
-    //     &mut dfst,
-    //     MinimizeConfig {
-    //         delta: 1e-4,
-    //         allow_nondet: false,
+    // let dfst: VectorFst<TropicalWeight> = determinize_with_config(
+    //     fst,
+    //     DeterminizeConfig {
+    //         delta: 1.0e-5,
+    //         det_type: DeterminizeType::DeterminizeNonFunctional,
     //     },
     // )?;
-    *fst = dfst;
+    minimize_with_config(
+        fst,
+        MinimizeConfig {
+            delta: 1e-4,
+            allow_nondet: true,
+        },
+    )?;
+    // *fst = dfst;
     Ok(())
 }
 
