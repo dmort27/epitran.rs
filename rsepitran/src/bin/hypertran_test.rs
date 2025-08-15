@@ -13,16 +13,31 @@
 //!
 //! Usage:
 //! - `cargo run --bin hypertran_test --demo` - Run with mock data (fast)
+//! - `cargo run --bin hypertran_test --demo --lang fra_Latn` - Demo specific language
 //! - `cargo run --bin hypertran_test` - Run real tests (requires FST compilation)
+//! - `cargo run --bin hypertran_test --lang deu_Latn` - Test specific language only
 
 use anyhow::{Context, Result};
+use clap::Parser;
 use colored::*;
 use rsepitran::epitran::Epitran;
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::path::Path;
 use tabled::{settings::Style, Table, Tabled};
+
+#[derive(Parser)]
+#[command(name = "hypertran_test")]
+#[command(about = "Comprehensive testing framework for rsepitran library")]
+struct Args {
+    /// Run in demo mode with mock data (fast)
+    #[arg(long)]
+    demo: bool,
+    
+    /// Test only a specific language (e.g., deu_Latn, fra_Latn)
+    #[arg(short = 'l', long = "lang")]
+    language: Option<String>,
+}
 
 #[derive(Tabled)]
 struct TestResult {
@@ -42,24 +57,27 @@ struct LanguageStats {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    let demo_mode = args.len() > 1 && args[1] == "--demo";
+    let args = Args::parse();
     
     println!("Running Epitran Test Suite");
     println!("==========================\n");
     
-    if demo_mode {
+    if args.demo {
         println!("Note: Running in demo mode with mock data.");
         println!("Use without --demo flag to run real tests (requires FST compilation).\n");
         
         // Demo with mock data to show the table structure and functionality
-        run_demo_test()?;
+        run_demo_test(args.language.as_deref())?;
         
         // Show what the real implementation would do:
         println!("\n{}", "REAL IMPLEMENTATION WOULD:".bold().underline());
         println!("1. Initialize Epitran with: let epitran = Epitran::new();");
         println!("2. Get available languages with: epitran.available_languages()");
-        println!("3. For each language with a corresponding test file:");
+        if let Some(lang) = &args.language {
+            println!("3. Test only the specified language: {}", lang);
+        } else {
+            println!("3. For each language with a corresponding test file:");
+        }
         println!("   - Load test cases from data/tests/{{lang_code}}-tests.csv");
         println!("   - Run epitran.transliterate_simple(lang_code, input)");
         println!("   - Compare output with reference");
@@ -67,13 +85,13 @@ fn main() -> Result<()> {
         println!("4. Provide summary statistics");
     } else {
         println!("Initializing Epitran (this may take some time to build FSTs)...");
-        run_real_tests()?;
+        run_real_tests(args.language.as_deref())?;
     }
     
     Ok(())
 }
 
-fn run_real_tests() -> Result<()> {
+fn run_real_tests(target_language: Option<&str>) -> Result<()> {
     let epitran = Epitran::new();
     let available_languages = epitran.available_languages();
     
@@ -82,12 +100,29 @@ fn run_real_tests() -> Result<()> {
     let mut total_correct = 0;
     let mut _tested_languages = 0;
     
-    for &lang_code in available_languages {
+    // Filter languages based on target_language parameter
+    let languages_to_test: Vec<&str> = if let Some(target_lang) = target_language {
+        if available_languages.contains(&target_lang) {
+            vec![target_lang]
+        } else {
+            eprintln!("Error: Language '{}' is not available.", target_lang);
+            eprintln!("Available languages: {:?}", available_languages);
+            return Ok(());
+        }
+    } else {
+        available_languages.to_vec()
+    };
+    
+    for &lang_code in &languages_to_test {
         // Convert from underscore format (e.g., "fra_Latn") to hyphen format (e.g., "fra_Latn-tests.csv")
         let test_file_name = format!("{}-tests.csv", lang_code);
         let test_file_path = format!("data/tests/{}", test_file_name);
         
         if !Path::new(&test_file_path).exists() {
+            if target_language.is_some() {
+                eprintln!("Error: Test file '{}' not found for language '{}'.", test_file_path, lang_code);
+                return Ok(());
+            }
             continue;
         }
         
@@ -115,18 +150,37 @@ fn run_real_tests() -> Result<()> {
     Ok(())
 }
 
-fn run_demo_test() -> Result<()> {
-    println!("Testing language: {}", "deu_Latn".bold());
+fn run_demo_test(target_language: Option<&str>) -> Result<()> {
+    let demo_lang = target_language.unwrap_or("deu_Latn");
+    
+    println!("Testing language: {}", demo_lang.bold());
     println!("{}", "=".repeat(50));
     
     // Mock test data to demonstrate the table structure
-    let demo_cases = vec![
-        ("da", "daː", "daː"),           // Correct
-        ("Abend", "aːbn̩t", "aːbənt"),   // Incorrect  
-        ("Sprache", "ʃpraːxə", "ʃpraːxə"), // Correct
-        ("Pass", "pas", "pɑs"),         // Incorrect
-        ("quälen", "kvɛːlən", "kvɛːlən"), // Correct
-    ];
+    // Use different demo data based on the language
+    let demo_cases = match demo_lang {
+        "fra_Latn" => vec![
+            ("bonjour", "bonʒuʁ", "bonʒuʁ"),     // Correct
+            ("chat", "ʃa", "ʃat"),               // Incorrect
+            ("eau", "o", "o"),                   // Correct
+            ("français", "fʁɑ̃sɛ", "fʁɑ̃se"),      // Incorrect
+            ("merci", "mɛʁsi", "mɛʁsi"),         // Correct
+        ],
+        "spa_Latn" => vec![
+            ("hola", "ola", "ola"),              // Correct
+            ("casa", "kasa", "casa"),            // Incorrect
+            ("niño", "niɲo", "niɲo"),            // Correct
+            ("agua", "aɣwa", "aɣua"),            // Incorrect
+            ("gracias", "gɾaθjas", "gɾaθjas"),   // Correct
+        ],
+        _ => vec![
+            ("da", "daː", "daː"),                // Correct
+            ("Abend", "aːbn̩t", "aːbənt"),        // Incorrect  
+            ("Sprache", "ʃpraːxə", "ʃpraːxə"),   // Correct
+            ("Pass", "pas", "pɑs"),              // Incorrect
+            ("quälen", "kvɛːlən", "kvɛːlən"),    // Correct
+        ],
+    };
     
     let mut test_results = Vec::new();
     let mut correct_count = 0;
@@ -161,14 +215,14 @@ fn run_demo_test() -> Result<()> {
     let accuracy = (correct_count as f64 / total_count as f64) * 100.0;
     
     println!("Language: {} | Items: {} | Correct: {} | Accuracy: {:.2}%", 
-             "deu_Latn", total_count, correct_count, accuracy);
+             demo_lang, total_count, correct_count, accuracy);
     
     // Demo summary statistics
     println!("\n{}", "DEMO SUMMARY STATISTICS".bold().underline());
     println!("{}", "=".repeat(50));
     
     println!("\n{}", "Test items per language:".bold());
-    println!("  deu_Latn: {} items", total_count);
+    println!("  {}: {} items", demo_lang, total_count);
     
     println!("\n{}", "Accuracy per language:".bold());
     let accuracy_str = format!("{:.2}%", accuracy);
@@ -180,7 +234,7 @@ fn run_demo_test() -> Result<()> {
         accuracy_str.red()
     };
     
-    println!("  deu_Latn: {} ({}/{})", colored_accuracy, correct_count, total_count);
+    println!("  {}: {} ({}/{})", demo_lang, colored_accuracy, correct_count, total_count);
     
     println!("\n{}", "Overall Statistics:".bold());
     println!("  Total test items: {}", total_count);

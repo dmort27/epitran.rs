@@ -21,19 +21,31 @@ The testing framework automatically tests each language that has:
 
 ### Demo Mode (Recommended for Testing)
 ```bash
+# Test all languages with mock data
 cargo run --bin hypertran_test -- --demo
+
+# Test specific language with mock data
+cargo run --bin hypertran_test -- --demo --lang fra_Latn
+cargo run --bin hypertran_test -- --demo -l spa_Latn
 ```
 - Runs quickly with mock data
 - Shows the framework structure and table formatting
 - Perfect for verifying the implementation works
+- Supports language-specific demo data for common languages
 
 ### Full Testing Mode
 ```bash
+# Test all available languages
 cargo run --bin hypertran_test
+
+# Test only a specific language
+cargo run --bin hypertran_test -- --lang deu_Latn
+cargo run --bin hypertran_test -- -l fra_Latn
 ```
-- Compiles FSTs for all available languages (takes significant time)
+- Compiles FSTs for specified languages (takes significant time)
 - Runs real transliteration tests
 - Provides actual accuracy measurements
+- Use `--lang` option to test only one language for faster execution
 
 ## Test File Format
 
@@ -66,6 +78,12 @@ The framework provides:
    - Accuracy per language (sorted by performance)
    - Overall accuracy across all languages
 
+## Command-Line Options
+
+- `--demo`: Run in demo mode with mock data (fast execution)
+- `--lang <LANGUAGE>` or `-l <LANGUAGE>`: Test only a specific language
+- `--help` or `-h`: Show help message with all available options
+
 ## Implementation Details
 
 The framework:
@@ -74,6 +92,7 @@ The framework:
 - Calls `epitran.transliterate_simple(lang_code, input)` for each test case
 - Compares system output (hypothesis) against reference translations
 - Uses the `tabled` crate for table formatting and `colored` crate for text coloring
+- Supports filtering to test only specific languages for faster execution
 
 ## Dependencies
 
