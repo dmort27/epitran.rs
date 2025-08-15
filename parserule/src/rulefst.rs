@@ -224,12 +224,8 @@ pub fn rule_fst(
     output =
         compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_replacer)?;
     output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l1)?;
+    output = compose::<_, VectorFst<_>, VectorFst<_>, VectorFst<_>, &_, &_>(&output, &fst_l2)?;
     optimize_fst(&mut output, 1.0e-7).unwrap();
-
-    // Skip fst_l2 composition - it appears to be causing issues with FST composition
-    // and the tests pass without it, suggesting the left context constraint is
-    // already enforced by other parts of the algorithm (likely fst_l1)
-    // TODO: Investigate if fst_l2 is needed for more complex cases
 
     // println!("Created machine for rule: {}", rulestr);
     // output.draw("rulefst.dot", &DrawingConfig::default())?;
@@ -430,6 +426,14 @@ fn build_fst_l1(
     Ok(fst_l1)
 }
 
+/// Build FST L2 for the Mohri-Sproat algorithm.
+/// 
+/// This FST enforces the left context constraint by ensuring that the left context
+/// pattern (lambda) is properly satisfied. It computes the complement of the lambda
+/// pattern and constructs an FST that accepts strings where the left context is
+/// correctly handled.
+///
+/// The construction follows: (complement(lambda) langle2)* Σ*
 fn build_fst_l2(
     symt: Arc<SymbolTable>,
     sigma_star: VectorFst<TropicalWeight>,
@@ -437,107 +441,18 @@ fn build_fst_l2(
     langle2: Label,
 ) -> Result<VectorFst<TropicalWeight>> {
     let exclude: HashSet<Label> = HashSet::from([langle2]);
-
-    // Check if lambda_fst accepts only epsilon
-    let lambda_accepts_epsilon = lambda_fst.num_states() == 2 && lambda_fst.start().is_some() && {
-        let start = lambda_fst.start().unwrap();
-        let trs = lambda_fst.get_trs(start).unwrap();
-        // Check if there's exactly one epsilon transition to a final state
-        trs.len() == 1
-            && trs[0].ilabel == EPS_LABEL
-            && trs[0].olabel == EPS_LABEL
-            && lambda_fst.is_final(trs[0].nextstate).unwrap_or(false)
-    };
-
-    let mut fst: VectorFst<TropicalWeight> = if lambda_accepts_epsilon {
-        // For epsilon left context, (Σ* - ε) = Σ+
-        // Create Σ+ by cloning Σ* and removing the final weight from start state
-        let mut sigma_plus = sigma_star.clone();
-        if let Some(start_state) = sigma_plus.start() {
-            if sigma_plus.is_final(start_state)? {
-                sigma_plus.delete_final_weight(start_state)?;
-            }
-        }
-        sigma_plus
-    } else {
-        // For non-epsilon left context, compute complement and intersect
-        let lambda_complement = fst_complement(symt.clone(), lambda_fst, exclude.clone())?;
-        construct_product_automaton(symt, sigma_star.clone(), lambda_complement, exclude)?
-    };
-
-    let langle2_fst: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL];
-
-    concat(&mut fst, &langle2_fst)?;
-
-    concat(&mut fst, &sigma_star.clone())?;
-
-    Ok(fst)
+    let left_complement = fst_complement(symt.clone(), lambda_fst, exclude)?;
+    
+    let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 0.0];
+    
+    let mut fst_l2 = left_complement;
+    concat(&mut fst_l2, &consume_langle2)?;
+    closure(&mut fst_l2, ClosureType::ClosureStar);
+    concat(&mut fst_l2, &sigma_star)?;
+    
+    rm_epsilon(&mut fst_l2)?;
+    Ok(fst_l2)
 }
-
-// fn build_fst_l2(
-//     symt: Arc<SymbolTable>,
-//     sigma_star: VectorFst<TropicalWeight>,
-//     lambda_fst: VectorFst<TropicalWeight>,
-//     langle2: Label,
-// ) -> Result<VectorFst<TropicalWeight>> {
-//     // Start with a universal acceptor
-//     // let mut fst_l2 = sigma_star.clone();
-
-//     // Also construct the complement of lambda.
-//     let left_complement: VectorFst<TropicalWeight> =
-//         fst_complement(symt.clone(), lambda_fst, langle2)?;
-//     // connect(&mut left_complement)?;
-//     // left_complement.draw(
-//     //     "build_fst_l2_complement.dot",
-//     //     &DrawingConfig {
-//     //         vertical: true,
-//     //         size: Some((6.0, 4.0)),
-//     //         title: "Complement".to_string(),
-//     //         portrait: false,
-//     //         ranksep: Some(2.0),
-//     //         nodesep: Some(2.0),
-//     //         fontsize: 12,
-//     //         acceptor: true,
-//     //         show_weight_one: true,
-//     //         print_weight: true,
-//     //     },
-//     // )?;
-
-//     // We also need to create a transducer for the langle symbol
-//     let consume_langle2: VectorFst<TropicalWeight> = fst![langle2 => EPS_LABEL; 0.0];
-
-//     // Add the complment of lambda to the universal acceptor.
-//     // concat(&mut fst_l2, &left_complement)?;
-
-//     let mut fst_l2 = left_complement;
-
-//     fst_l2.draw(
-//         "build_fst_l2.dot",
-//         &DrawingConfig {
-//             vertical: true,
-//             size: Some((6.0, 4.0)),
-//             title: "l2 FST with sigma* and !lambda".to_string(),
-//             portrait: false,
-//             ranksep: Some(1.0),
-//             nodesep: Some(1.0),
-//             fontsize: 12,
-//             acceptor: false,
-//             show_weight_one: true,
-//             print_weight: true,
-//         },
-//     )?;
-
-//     // Then add the transducer for langle2.
-//     concat(&mut fst_l2, &consume_langle2)?;
-//     // Take the closure of the resulting FST
-//     closure(&mut fst_l2, ClosureType::ClosureStar);
-//     // Then compose a unversal acceptor.
-//     concat(&mut fst_l2, &sigma_star)?;
-
-//     // Remove the epsilon transitions.
-//     rm_epsilon(&mut fst_l2)?;
-//     Ok(fst_l2)
-// }
 
 pub fn difference_automaton(
     symt: Arc<SymbolTable>,
