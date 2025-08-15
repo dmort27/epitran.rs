@@ -4,5 +4,5 @@ members = ["parserule", "rsepitran"]
 
 # Specify a consistent version of rustfst for all crates
 [workspace.dependencies]
-rustfst = "1.1.2" # Use the newer version
+rustfst = "1.1.6" # Use the newer version
 anyhow = "1.0.98"
