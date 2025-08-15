@@ -25,6 +25,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tabled::{settings::Style, Table, Tabled};
+use unicode_normalization::UnicodeNormalization;
+
+/// Normalize text using NFD (Normalized Form Decomposition)
+/// This ensures all language data is consistently normalized
+fn nfd_normalize(text: &str) -> String {
+    text.nfd().collect()
+}
 
 #[derive(Parser)]
 #[command(name = "hypertran_test")]
@@ -275,15 +282,15 @@ fn run_language_test(epitran: &Epitran, lang_code: &str, test_file_path: &str) -
             continue;
         }
         
-        let input = parts[0].trim();
-        let reference = parts[1].trim();
+        let input = nfd_normalize(parts[0].trim());
+        let reference = nfd_normalize(parts[1].trim());
         
         if input.is_empty() {
             continue;
         }
         
         // Get hypothesis from epitran
-        let hypothesis = match epitran.transliterate_simple(lang_code, input) {
+        let hypothesis = match epitran.transliterate_simple(lang_code, &input) {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("Error transliterating '{}': {}", input, e);
