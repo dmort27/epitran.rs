@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=data/");
 
     let out_dir = env::var("OUT_DIR")?;
-    let dest_path = Path::new(&out_dir).join("compiled_fsts.rs");
+    let dest_path = Path::new(&out_dir).join("language_data.rs");
 
     // Discover all language codes from map files
     let mut lang_codes = std::collections::HashSet::new();
@@ -17,28 +17,20 @@ fn main() -> Result<()> {
         if let Some(file_name) = entry.file_name().to_str() {
             if file_name.ends_with(".csv") {
                 if let Some(lang_code) = extract_lang_code(file_name) {
-                    if true {
-                        lang_codes.insert(lang_code);
-                    }
+                    lang_codes.insert(lang_code);
                 }
             }
         }
     }
 
     let mut generated_code = String::new();
-    // generated_code.push_str("use std::collections::HashMap;\n");
-    // generated_code.push_str("use std::sync::Arc;\n");
-    // generated_code.push_str("use rustfst::prelude::*;\n");
-    // generated_code.push_str("use rustfst::fst_impls::VectorFst;\n");
-    generated_code.push_str("use once_cell::sync::Lazy;\n");
-    generated_code.push_str("use parserule::langfst::build_lang_fst;\n\n");
 
     // Generate language data as static strings
     let mut successful_langs = Vec::new();
     let mut lang_data = Vec::new();
 
     for lang_code in &lang_codes {
-        println!("\n+++ Building wFST for {}+++\n", lang_code);
+        println!("Preparing data for {}", lang_code);
         match get_language_data(lang_code) {
             Ok((map_content, pre_content, post_content)) => {
                 let var_prefix = lang_code.replace("-", "_").to_uppercase();
@@ -47,15 +39,15 @@ fn main() -> Result<()> {
                 let post_var = format!("POST_DATA_{}", var_prefix);
 
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
+                    "static {}: &str = {:?};\n",
                     map_var, map_content
                 ));
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
+                    "static {}: &str = {:?};\n",
                     pre_var, pre_content
                 ));
                 generated_code.push_str(&format!(
-                    "static {}: Lazy<String> = Lazy::new(|| {:?}.to_string());\n",
+                    "static {}: &str = {:?};\n",
                     post_var, post_content
                 ));
 
@@ -68,28 +60,21 @@ fn main() -> Result<()> {
         }
     }
 
-    // Generate the lazy static map that builds FSTs at runtime
-    generated_code.push_str("\npub static COMPILED_FSTS: Lazy<HashMap<String, (Arc<SymbolTable>, VectorFst<TropicalWeight>)>> = Lazy::new(|| {\n");
-    generated_code.push_str("    let mut map = HashMap::new();\n");
+    // Generate a function to get language data by language code
+    generated_code.push_str("\npub fn get_language_data(lang_code: &str) -> Option<(&'static str, &'static str, &'static str)> {\n");
+    generated_code.push_str("    match lang_code {\n");
 
     for (lang_code, map_var, pre_var, post_var) in &lang_data {
         let key = lang_code.replace("-", "_");
         generated_code.push_str(&format!(
-            "    println!(\"+++Building WFST for {}\");\n    if let Ok((symt, fst)) = build_lang_fst((*{}).clone(), (*{}).clone(), (*{}).clone()) {{\n",
-            lang_code, pre_var, post_var, map_var
-        ));
-        generated_code.push_str(&format!(
-            "        map.insert(\"{}\".to_string(), (symt, fst));\n",
-            key
-        ));
-        generated_code.push_str(&format!(
-            "    }} else {{\n        eprintln!(\"Warning: Failed to build FST for {}\");\n    }}\n",
-            lang_code
+            "        \"{}\" => Some(({}, {}, {})),\n",
+            key, pre_var, post_var, map_var
         ));
     }
 
-    generated_code.push_str("    map\n");
-    generated_code.push_str("});\n\n");
+    generated_code.push_str("        _ => None,\n");
+    generated_code.push_str("    }\n");
+    generated_code.push_str("}\n\n");
 
     // Generate available languages list
     generated_code.push_str("pub static AVAILABLE_LANGUAGES: &[&str] = &[\n");
