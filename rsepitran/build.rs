@@ -2,7 +2,14 @@ use anyhow::{Context, Result};
 use std::env;
 use std::fs;
 use std::path::Path;
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
+
+/// Normalize text using NFD (Normalized Form Decomposition)
+/// This ensures all language data is consistently normalized
+fn nfd_normalize(text: &str) -> String {
+    text.nfd().collect()
+}
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=data/");
@@ -40,15 +47,15 @@ fn main() -> Result<()> {
 
                 generated_code.push_str(&format!(
                     "static {}: &str = {:?};\n",
-                    map_var, map_content
+                    map_var, nfd_normalize(&map_content)
                 ));
                 generated_code.push_str(&format!(
                     "static {}: &str = {:?};\n",
-                    pre_var, pre_content
+                    pre_var, nfd_normalize(&pre_content)
                 ));
                 generated_code.push_str(&format!(
                     "static {}: &str = {:?};\n",
-                    post_var, post_content
+                    post_var, nfd_normalize(&post_content)
                 ));
 
                 lang_data.push((lang_code.clone(), map_var, pre_var, post_var));

@@ -6,3 +6,4 @@ members = ["parserule", "rsepitran"]
 [workspace.dependencies]
 rustfst = "1.1.6" # Use the newer version
 anyhow = "1.0.98"
+unicode-normalization = "0.1"

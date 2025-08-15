@@ -1,4 +1,5 @@
 use parserule::langfst::build_lang_fst;
+use parserule::normalize::nfd_normalize;
 use parserule::rulefst::apply_fst;
 
 const MAP: &str = r#"orth,phon
@@ -52,8 +53,11 @@ const POST: &str = r##"
 "##;
 
 fn test_build_realistic_lang_fst1() {
-    let (symt, fst) = build_lang_fst(PRE.to_string(), POST.to_string(), MAP.to_string())
-        .expect("Failed to build language FST in test");
+    let (symt, fst) = build_lang_fst(
+        nfd_normalize(PRE), 
+        nfd_normalize(POST), 
+        nfd_normalize(MAP)
+    ).expect("Failed to build language FST in test");
     let pairs: Vec<(&str, &str)> = vec![
         ("#ngalngal#", "#ŋalŋal#"),
         ("#dino#", "#d͡ʒino#"),
@@ -103,8 +107,8 @@ fn test_build_realistic_lang_fst1() {
     ];
     for (itoken, otoken) in pairs {
         assert_eq!(
-            apply_fst(symt.clone(), fst.clone(), itoken.to_string()),
-            otoken.to_string()
+            apply_fst(symt.clone(), fst.clone(), nfd_normalize(itoken)),
+            nfd_normalize(otoken)
         );
     }
 }

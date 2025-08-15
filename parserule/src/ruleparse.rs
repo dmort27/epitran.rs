@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use colored::Colorize;
+use crate::normalize::nfd_normalize;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -47,7 +48,8 @@ pub struct RewriteRule {
 
 fn character(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let (input, c) = none_of(" />_()[]-|*+^#:%\\\n\r")(input)?;
-    let syms: HashSet<String> = HashSet::from([c.to_string()]);
+    let normalized_char = nfd_normalize(&c.to_string());
+    let syms: HashSet<String> = HashSet::from([normalized_char]);
     Ok((input, (RegexAST::Char(c), syms)))
 }
 
@@ -67,14 +69,16 @@ fn uni_esc(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
         );
         '\u{FFFD}' // Unicode replacement character
     });
-    let syms: HashSet<String> = HashSet::from([c.to_string()]);
+    let normalized_char = nfd_normalize(&c.to_string());
+    let syms: HashSet<String> = HashSet::from([normalized_char]);
     Ok((input, (RegexAST::Char(c), syms)))
 }
 
 fn escape(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let mut parser = preceded(tag("\\"), one_of("\\ /<>_()[]-|*+^#:%"));
     let (input, c) = parser.parse(input)?;
-    let syms: HashSet<String> = HashSet::from([c.to_string()]);
+    let normalized_char = nfd_normalize(&c.to_string());
+    let syms: HashSet<String> = HashSet::from([normalized_char]);
     Ok((input, (RegexAST::Char(c), syms)))
 }
 
@@ -88,7 +92,7 @@ fn class(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let strings: Vec<String> = chars
         .iter()
         .filter_map(|node| match node {
-            (RegexAST::Char(c), _) => Some(c.to_string()),
+            (RegexAST::Char(c), _) => Some(nfd_normalize(&c.to_string())),
             _ => None,
         })
         .collect();
@@ -106,7 +110,7 @@ fn complement_class(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let strings: Vec<String> = chars
         .iter()
         .filter_map(|node| match node {
-            (RegexAST::Char(c), _) => Some(c.to_string()),
+            (RegexAST::Char(c), _) => Some(nfd_normalize(&c.to_string())),
             _ => None,
         })
         .collect();

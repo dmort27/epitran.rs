@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::error::Error;
 
 use crate::graphemeparse::get_graphemes;
+use crate::normalize::nfd_normalize;
 
 #[derive(Debug, Deserialize, PartialEq)]
 struct Mapping {
@@ -34,8 +35,12 @@ pub fn process_map(data: String) -> Result<(HashSet<String>, Vec<ParsedMapping>)
                 phon: "".to_string(),
             }
         });
-        let mut orth = get_graphemes(&record.orth);
-        let mut phon = get_graphemes(&record.phon);
+        // Normalize the orthographic and phonetic strings before processing
+        let normalized_orth = nfd_normalize(&record.orth);
+        let normalized_phon = nfd_normalize(&record.phon);
+        
+        let mut orth = get_graphemes(&normalized_orth);
+        let mut phon = get_graphemes(&normalized_phon);
         syms.extend(orth.clone());
         syms.extend(phon.clone());
         let target_len = orth.len().max(phon.len());
