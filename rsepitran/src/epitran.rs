@@ -12,6 +12,7 @@ use rustfst::fst_impls::VectorFst;
 use rustfst::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use unicode_normalization::UnicodeNormalization;
 
 // Include the generated language data
 include!(concat!(env!("OUT_DIR"), "/language_data.rs"));
@@ -37,6 +38,35 @@ impl Epitran {
         Self {
             fst_cache: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Normalize input text according to Epitran standards
+    ///
+    /// This function performs two normalizations:
+    /// 1. Converts all uppercase Latin (Roman) characters to lowercase
+    /// 2. Applies Unicode NFD (Canonical Decomposition) normalization
+    ///
+    /// # Arguments
+    /// * `text` - The input text to normalize
+    ///
+    /// # Returns
+    /// The normalized text as a String
+    pub fn normalize_input(&self, text: &str) -> String {
+        // First convert Latin uppercase to lowercase
+        let lowercase_text = text
+            .chars()
+            .map(|c| {
+                // Only convert Latin script uppercase to lowercase
+                if c.is_ascii_uppercase() || (c >= 'À' && c <= 'Ÿ') {
+                    c.to_lowercase().collect::<String>()
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect::<String>();
+
+        // Then apply NFD normalization
+        lowercase_text.nfd().collect()
     }
 
     /// Get a list of all available language codes
@@ -107,12 +137,14 @@ impl Epitran {
     /// Transliterate text from orthographic to phonetic representation
     ///
     /// This method lazily compiles the FST for the requested language if it hasn't
-    /// been built yet, then caches it for future use.
+    /// been built yet, then caches it for future use. Input text is automatically
+    /// normalized by converting Latin uppercase to lowercase and applying NFD
+    /// Unicode normalization.
     ///
     /// # Arguments
     /// * `lang_code` - The language-script code (e.g., "ara_Arab", "fra_Latn")
     /// * `boundary` - The boundary symbol to use (typically "#")
-    /// * `text` - The text to transliterate
+    /// * `text` - The text to transliterate (will be normalized automatically)
     ///
     /// # Returns
     /// The transliterated text as a `Result<String, anyhow::Error>`
@@ -122,19 +154,22 @@ impl Epitran {
     /// use rsepitran::epitran::Epitran;
     ///
     /// let epitran = Epitran::new();
-    /// let result = epitran.transliterate("fra_Latn", "#", "bonjour");
+    /// let result = epitran.transliterate("fra_Latn", "#", "BONJOUR"); // uppercase will be normalized
     /// match result {
     ///     Ok(phonetic) => println!("Phonetic: {}", phonetic),
     ///     Err(e) => eprintln!("Error: {}", e),
     /// }
     /// ```
     pub fn transliterate(&self, lang_code: &str, boundary: &str, text: &str) -> Result<String> {
+        // Normalize the input text
+        let normalized_text = self.normalize_input(text);
+
         // Get or build the FST for this language
         let fst_data = self.get_or_build_fst(lang_code)?;
         let (symt, fst) = fst_data.as_ref();
 
         // Prepare input with boundaries
-        let input = format!("{}{}{}", boundary, text, boundary);
+        let input = format!("{}{}{}", boundary, normalized_text, boundary);
 
         // Apply the FST
         let result = apply_fst(symt.clone(), fst.clone(), input);
@@ -159,10 +194,12 @@ impl Epitran {
     ///
     /// This is a convenience method that uses "#" as the default boundary symbol.
     /// The FST for the requested language will be compiled lazily if needed.
+    /// Input text is automatically normalized by converting Latin uppercase to
+    /// lowercase and applying NFD Unicode normalization.
     ///
     /// # Arguments
     /// * `lang_code` - The language-script code
-    /// * `text` - The text to transliterate
+    /// * `text` - The text to transliterate (will be normalized automatically)
     ///
     /// # Returns
     /// The transliterated text as a `Result<String, anyhow::Error>`
@@ -315,5 +352,49 @@ mod tests {
         // Cache stats should show 2 cached languages
         let (_, cached) = epitran.cache_stats();
         assert_eq!(cached, 2);
+    }
+
+    #[test]
+    fn test_input_normalization() {
+        let epitran = Epitran::new();
+        
+        // Test lowercase conversion
+        assert_eq!(epitran.normalize_input("HELLO"), "hello");
+        assert_eq!(epitran.normalize_input("Hello"), "hello");
+        assert_eq!(epitran.normalize_input("HeLLo"), "hello");
+        
+        // Test with Latin extended characters (NFD will decompose them)
+        let cafe_normalized = epitran.normalize_input("CAFÉ");
+        assert!(cafe_normalized.starts_with("cafe"));
+        assert_eq!(cafe_normalized.len(), 6); // 'c' + 'a' + 'f' + 'e' + combining acute
+        
+        let naive_normalized = epitran.normalize_input("NAÏVE");
+        assert!(naive_normalized.starts_with("nai")); // 'n' + 'a' + 'i' (then combining diaeresis)
+        assert_eq!(naive_normalized.len(), 7); // 'n' + 'a' + 'i' + combining diaeresis + 'v' + 'e'
+        
+        // Test NFD normalization (é should become e + combining acute)
+        let normalized = epitran.normalize_input("café");
+        // The é should be decomposed into e + ́ (combining acute accent)
+        assert!(normalized.contains('e'));
+        assert!(normalized.len() > 4); // Should be longer due to decomposition
+        
+        // Test that non-Latin scripts are not affected by case conversion
+        assert_eq!(epitran.normalize_input("Привет"), "Привет"); // Cyrillic should remain unchanged
+        assert_eq!(epitran.normalize_input("こんにちは"), "こんにちは"); // Japanese should remain unchanged
+    }
+
+    #[test]
+    fn test_uppercase_normalization_in_transliteration() {
+        let epitran = Epitran::new();
+        
+        // Test that uppercase input produces the same result as lowercase
+        let lowercase_result = epitran.transliterate_simple("spa_Latn", "villa");
+        let uppercase_result = epitran.transliterate_simple("spa_Latn", "VILLA");
+        
+        // Both should produce the same result after normalization
+        assert_eq!(lowercase_result.is_ok(), uppercase_result.is_ok());
+        if let (Ok(lower), Ok(upper)) = (lowercase_result, uppercase_result) {
+            assert_eq!(lower, upper);
+        }
     }
 }
