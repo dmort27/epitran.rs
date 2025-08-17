@@ -11,7 +11,7 @@ use rustfst::algorithms::{add_super_final_state, tr_sort};
 use rustfst::fst_impls::VectorFst;
 use rustfst::fst_traits::MutableFst;
 use rustfst::prelude::*;
-use rustfst::prelude::{compose::compose, union::union};
+use rustfst::prelude::compose::compose;
 
 /// Build a wFST for a language using the preprocessing and postprocessing
 /// scripts and the mapping table.
@@ -34,9 +34,6 @@ pub fn build_lang_fst(
     let (_, (preproc_ast, preproc_syms)) = parse_script(&preproc)?;
     let (_, (postproc_ast, postproc_syms)) = parse_script(&postproc)?;
 
-    println!("==> preproc_ast={:?}", preproc_ast);
-    println!("==> postproc_ast={:?}", postproc_ast);
-
     let mut syms = HashSet::from(["#".to_string()]); // Add the super-final state symbol
     syms.extend(map_syms);
     syms.extend(preproc_syms);
@@ -48,10 +45,10 @@ pub fn build_lang_fst(
     let symt = Arc::new(symt_inner);
 
     let mut preproc_fst = compile_script(symt.clone(), preproc_ast)?;
-    optimize_fst(&mut preproc_fst, 1.0e-5)?;
     let mut postproc_fst = compile_script(symt.clone(), postproc_ast)?;
-    optimize_fst(&mut postproc_fst, 1.0e-5)?;
     let mut mapping_fst = compile_mapping_fst(symt.clone(), mapping)?;
+    
+    // Optimize only the mapping FST which is most likely to benefit
     optimize_fst(&mut mapping_fst, 1.0e-5)?;
 
     // println!("--> preproc_fst={:?}", preproc_fst);
@@ -91,28 +88,38 @@ fn compile_mapping_fst(
     fst.set_final(q0, 1.0)?;
     fst.set_input_symbols(symt.clone());
     fst.set_output_symbols(symt.clone());
+    
+    // Build mapping FST directly by adding all paths to the same FST
+    // This avoids the expensive union operations
     for m in mapping.iter() {
-        let mut transducer_fst: VectorFst<TropicalWeight> = VectorFst::new();
-        let mut last = transducer_fst.add_state();
-        transducer_fst.set_start(last)?;
+        let mut current_state = q0;
         for (i, o) in m.orth.iter().zip(m.phon.iter()) {
-            let next = transducer_fst.add_state();
-            let ilabel = symt.get_label(i).unwrap_or_else(|| {
-                println!("Warning: Symbol '{i}' is unknown, using epsilon");
-                0
-            });
-            let olabel = symt.get_label(o).unwrap_or_else(|| {
-                println!("Warning: Symbol '{o}' is unknown, using epsilon");
-                0
-            });
-            transducer_fst.emplace_tr(last, ilabel, olabel, 0.0, next)?;
-            last = next;
+            let ilabel = symt.get_label(i).unwrap_or(0);
+            let olabel = symt.get_label(o).unwrap_or(0);
+            
+            // Try to find an existing transition with the same input/output labels
+            let mut found_state = None;
+            let trs = fst.get_trs(current_state)?;
+            for i in 0..trs.len() {
+                let tr = &trs[i];
+                if tr.ilabel == ilabel && tr.olabel == olabel {
+                    found_state = Some(tr.nextstate);
+                    break;
+                }
+            }
+            
+            if let Some(next_state) = found_state {
+                current_state = next_state;
+            } else {
+                let next_state = fst.add_state();
+                fst.emplace_tr(current_state, ilabel, olabel, 0.0, next_state)?;
+                current_state = next_state;
+            }
         }
-        transducer_fst.set_final(last, 0.0)?;
-        optimize_fst(&mut transducer_fst, 1e-5)?;
-        union(&mut fst, &transducer_fst)?;
-        optimize_fst(&mut fst, 1e-5)?;
+        // Make the final state of this path accepting
+        fst.set_final(current_state, 0.0)?;
     }
+    
     let qn = add_super_final_state(&mut fst);
     fst.emplace_tr(qn, 0, 0, 1.0, q0)?;
     // symt.labels().for_each(|l| {

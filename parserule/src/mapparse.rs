@@ -49,8 +49,6 @@ pub fn process_map(data: String) -> Result<(HashSet<String>, Vec<ParsedMapping>)
         let parsed_mapping = ParsedMapping { orth, phon };
         parsed_rules.push(parsed_mapping);
     }
-    println!("parsed_rules={:?}", parsed_rules);
-    println!("syms={:?}", syms);
     Ok((syms, parsed_rules))
 }
 
