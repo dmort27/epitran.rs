@@ -1,32 +1,31 @@
 use rustfst::algorithms::determinize::{
     determinize_with_config, DeterminizeConfig, DeterminizeType,
 };
-
 use rustfst::algorithms::{rm_epsilon::rm_epsilon, tr_sum};
 use rustfst::fst_impls::VectorFst;
 use rustfst::prelude::*;
 
 pub fn optimize_fst(
     fst: &mut VectorFst<TropicalWeight>,
-    _delta: f32,
+    delta: f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     rm_epsilon(fst)?;
-    tr_sum(fst);
+    // tr_sum(fst);
     // let dfst: VectorFst<TropicalWeight> = determinize_with_config(
     //     fst,
     //     DeterminizeConfig {
-    //         delta: 1.0e-5,
+    //         delta: delta,
     //         det_type: DeterminizeType::DeterminizeNonFunctional,
     //     },
     // )?;
+    // *fst = dfst;
     minimize_with_config(
         fst,
         MinimizeConfig {
-            delta: 1e-4,
+            delta: delta,
             allow_nondet: true,
         },
     )?;
-    // *fst = dfst;
     Ok(())
 }
 

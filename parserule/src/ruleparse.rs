@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use colored::Colorize;
 use crate::normalize::nfd_normalize;
+use colored::Colorize;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -120,6 +120,7 @@ fn complement_class(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
 
 fn sequence(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
     let mut parser = many1(alt((
+        uni_esc,
         boundary_mark,
         epsilon_mark,
         mac,
@@ -130,7 +131,6 @@ fn sequence(input: &str) -> IResult<&str, (RegexAST, HashSet<String>)> {
         class,
         complement_class,
         group,
-        uni_esc,
         escape,
         character,
     )));
@@ -786,10 +786,10 @@ mod tests {
                     vec![Statement::MacroDef((
                         "vowel".to_string(),
                         RegexAST::Group(vec![RegexAST::Disjunction(vec![
-                            RegexAST::Group(vec!(RegexAST::Char('a'))),
-                            RegexAST::Group(vec!(RegexAST::Char('b'))),
-                            RegexAST::Group(vec!(RegexAST::Char('c'))),
-                            RegexAST::Group(vec!(RegexAST::Char('d'))),
+                            RegexAST::Group(vec![RegexAST::Char('a')]),
+                            RegexAST::Group(vec![RegexAST::Char('b')]),
+                            RegexAST::Group(vec![RegexAST::Char('c')]),
+                            RegexAST::Group(vec![RegexAST::Char('d')]),
                         ])])
                     )),],
                     hashset_str!["a", "b", "c", "d"]
@@ -809,10 +809,10 @@ mod tests {
                         Statement::MacroDef((
                             "letter".to_string(),
                             RegexAST::Group(vec![RegexAST::Disjunction(vec![
-                                RegexAST::Group(vec!(RegexAST::Char('a'))),
-                                RegexAST::Group(vec!(RegexAST::Char('b'))),
-                                RegexAST::Group(vec!(RegexAST::Char('c'))),
-                                RegexAST::Group(vec!(RegexAST::Char('d'))),
+                                RegexAST::Group(vec![RegexAST::Char('a')]),
+                                RegexAST::Group(vec![RegexAST::Char('b')]),
+                                RegexAST::Group(vec![RegexAST::Char('c')]),
+                                RegexAST::Group(vec![RegexAST::Char('d')]),
                             ])])
                         )),
                         // Statement::Comment,
@@ -930,11 +930,11 @@ mod tests {
                         Statement::MacroDef((
                             "vowel".to_string(),
                             RegexAST::Group(vec![RegexAST::Disjunction(vec![
-                                RegexAST::Group(vec!(RegexAST::Char('a'))),
-                                RegexAST::Group(vec!(RegexAST::Char('e'))),
-                                RegexAST::Group(vec!(RegexAST::Char('i'))),
-                                RegexAST::Group(vec!(RegexAST::Char('o'))),
-                                RegexAST::Group(vec!(RegexAST::Char('u'))),
+                                RegexAST::Group(vec![RegexAST::Char('a')]),
+                                RegexAST::Group(vec![RegexAST::Char('e')]),
+                                RegexAST::Group(vec![RegexAST::Char('i')]),
+                                RegexAST::Group(vec![RegexAST::Char('o')]),
+                                RegexAST::Group(vec![RegexAST::Char('u')]),
                             ])])
                         )),
                         Statement::Comment,

@@ -8,15 +8,24 @@ fn main() {
     println!("Available languages: {:?}", epitran.available_languages());
 
     // Test transliteration with available languages
-    for &lang in epitran.available_languages().iter().take(3) {
-        println!("\nTesting language: {}", lang);
+    // for &lang in epitran.available_languages().iter().take(3) {
+    //     println!("\nTesting language: {}", lang);
 
-        let test_words = ["hello", "world", "test"];
-        for word in &test_words {
-            match epitran.transliterate_simple(lang, word) {
-                Ok(result) => println!("  {} -> {}", word, result),
-                Err(e) => println!("  Error transliterating '{}': {}", word, e),
-            }
+    //     let test_words = ["hello", "world", "test"];
+    //     for word in &test_words {
+    //         match epitran.transliterate_simple(lang, word) {
+    //             Ok(result) => println!("  {} -> {}", word, result),
+    //             Err(e) => println!("  Error transliterating '{}': {}", word, e),
+    //         }
+    //     }
+    //
+    let lang_code = "spa_Latn";
+    let test_words = vec!["hola", "rojo", "delinquir", "pollo"];
+
+    for word in &test_words {
+        match epitran.transliterate_simple(lang_code, word) {
+            Ok(result) => println!(" {} -> {}", word, result),
+            Err(e) => println!(" Error transliterating '{}': {}", word, e),
         }
     }
 
