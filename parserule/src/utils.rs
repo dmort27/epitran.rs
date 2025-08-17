@@ -1,7 +1,4 @@
-use rustfst::algorithms::determinize::{
-    determinize_with_config, DeterminizeConfig, DeterminizeType,
-};
-use rustfst::algorithms::{rm_epsilon::rm_epsilon, tr_sum};
+use rustfst::algorithms::rm_epsilon::rm_epsilon;
 use rustfst::fst_impls::VectorFst;
 use rustfst::prelude::*;
 
