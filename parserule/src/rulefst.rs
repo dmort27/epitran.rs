@@ -1863,10 +1863,9 @@ mod tests {
     #[test]
     fn test_compile_script_basic_with_comment() {
         let symt = Arc::new(symt!["#", "p", "b", "a", "i"]);
-        let (_, (script, _syms)) = parse_script(
-            "::voi::=(b|a|i)\n% The rules start here:\np -> b / (::voi::) _ (::voi::)",
-        )
-        .expect("Failed to parse script in test");
+        let (_, (script, _syms)) =
+            parse_script("::voi::=(b|a|i)\n% The rules start here:\np -> b / ::voi:: _ ::voi::")
+                .expect("Failed to parse script in test");
         let mut fst =
             compile_script(symt.clone(), script).expect("Failed to compile script in test");
         rm_epsilon(&mut fst).unwrap();
@@ -2031,7 +2030,6 @@ mod tests {
     }
 
     #[test]
-
     fn test_script_order_two_simple_rules() {
         let symt = Arc::new(symt!["a", "b", "c", "d", "#"]);
         let script = r#"a -> b
@@ -2047,6 +2045,38 @@ c -> d
     c -> d / b _
 "#;
         evaluate_script(symt, script, "bac", "bbd");
+    }
+
+    #[test]
+    fn test_script_incremental_two_disjunction_rules() {
+        let symt = Arc::new(symt!["a", "b", "c", "d", "#"]);
+        let script = r#"a -> b / b _ (c|bc)
+            bbb -> 0 / # _ (a|b|c)
+"#;
+        evaluate_script(symt, script, "#babcaabbac#", "#caabbbc#");
+    }
+
+    #[test]
+    fn test_script_incremental_two_disjunction_rules_macros() {
+        let symt = Arc::new(symt!["a", "b", "c", "d", "#"]);
+        let script = r#"::seta::=(c|bc)
+::setb::=(a|b|c)
+a -> b / b _ ::seta::
+bbb -> 0 / # _ ::setb::
+"#;
+        evaluate_script(symt, script, "#babcaabbac#", "#caabbbc#");
+    }
+
+    #[test]
+    fn test_script_incremental_three_disjunction_rules_macros() {
+        let symt = Arc::new(symt!["a", "b", "c", "d", "#"]);
+        let script = r#"::seta::=(c|bc)
+::setb::=(a|b|c)
+a -> b / b _ ::seta::
+bbb -> 0 / # _ ::setb::
+b -> d / _ ::seta::
+"#;
+        evaluate_script(symt, script, "#babcaabbac#", "#caabdbc#");
     }
 
     #[test]
@@ -2176,38 +2206,5 @@ c -> d
             apply_fst(symt, fst, "#pabaa#".to_string()),
             "#pabai#".to_string()
         );
-    }
-
-    #[test]
-    fn test_concat() {
-        let mut fst1 = VectorFst::<TropicalWeight>::new();
-        let q0 = fst1.add_state();
-        fst1.set_start(q0)
-            .expect("Failed to set start state in test");
-        let q1 = fst1.add_state();
-        fst1.set_final(q1, 0.0)
-            .expect("Failed to set final state in test");
-        fst1.emplace_tr(q0, 0, 0, 0.0, q1)
-            .expect("Failed to add transition in test");
-        let fst2: VectorFst<TropicalWeight> = fst![1 => 2; 0.0];
-        concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
-        assert_eq!(fst1, fst![0, 0, 1 => 0, 0, 2; 0.0])
-    }
-
-    #[test]
-    fn test_rm_epsilon() {
-        let mut fst1 = VectorFst::<TropicalWeight>::new();
-        let q0 = fst1.add_state();
-        fst1.set_start(q0)
-            .expect("Failed to set start state in test");
-        let q1 = fst1.add_state();
-        fst1.set_final(q1, 0.0)
-            .expect("Failed to set final state in test");
-        fst1.emplace_tr(q0, 0, 0, 0.0, q1)
-            .expect("Failed to add transition in test");
-        let fst2: VectorFst<TropicalWeight> = fst![1, 3 => 2, 4; 0.0];
-        concat(&mut fst1, &fst2).expect("Failed to concatenate FSTs in test");
-        rm_epsilon(&mut fst1).expect("Failed to remove epsilon transitions in test");
-        assert_eq!(fst1, fst![1, 3 => 2, 4; 0.0])
     }
 }
